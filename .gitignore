@@ -1,0 +1,6 @@
+# PyCharm Files
+*egg-info
+.idea/
+
+# VIM files
+*~
