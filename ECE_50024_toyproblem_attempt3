@@ -1,0 +1,90 @@
+import math
+import numpy as np
+from IPython.display import clear_output
+from tqdm import tqdm_notebook as tqdm
+
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+%matplotlib inline
+import seaborn as sns
+sns.color_palette("bright")
+import matplotlib as mpl
+import matplotlib.cm as cm
+
+import torch
+from torch import Tensor
+from torch import nn
+from torch.nn  import functional as F 
+from torch.autograd import Variable
+
+def ode_solve(z0, t0, t1, f):
+    h_max = 0.05
+    n = math.ceil((abs(t1 - t0)/h_max).max().item())
+
+    h = (t1 - t0)/n
+    t = t0
+    z = z0
+
+    for i_step in range(n):
+        z = z + h * f(z, t)
+        t = t + h
+    return z
+
+class ODE_first (nn.Module):
+    def __init__(self, z0, t, grad_outputs):
+        super (ODE_first, self).__init__()
+        #define layers
+        self.conv1 = nn.Conv2d(in_channels=1, out_channels=16, kernel_size=3, stride=1, padding=1)
+        self.conv2 = nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, stride=1, padding=1)
+        self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.fc1 = nn.Linear(32 * 7 * 7, 128)
+        self.fc2 = nn.Linear(128, 10)
+        
+        
+        # call to forward function defined in "class adjoint"
+        out = self.forward(z0, t)
+        
+        adfdz, adfdt, *adfdtheta = torch.autograd.grad(out, *self.parameters(), grad_outputs, allow_unused=True 
+                                                       retain_graph=True )
+        # Expand gradients so they are not summed.
+        adfdtheta = torch.cat([pgr.flatten for pgr in adfdtheta]).unsqueeze(0)
+        adfdtheta = adfdp.expand(z.shape[0], -1)/batch_size
+        adfdt = adfdt.expand(z.shape[0], -1)/batch_size
+        
+        return out, adfdz, adfdt, adfdtheta
+    def flat_theta(self):
+        theta_shape = []
+        f_theta = []
+            for i in self.parameters()
+                 theta_shape.append(i.flatten())
+        return torch.cat (f_theta)
+        
+
+class adjoint (torch.autograd.Function)
+     @staticmethod
+     def forward(ctx, z0, t, f_theta):
+        assert isinstance(func, ODE_first)
+        bs, *z_shape = z0.size()
+        time_len = t.size(0)
+        
+        with torch.no_grad():
+            z = torch.zeros(time_len, bs, *z_shape)
+            z[0] = z0
+            for i in range(time_len - 1):
+                z0 = ode_solve(z0, t[i], t[i+1], func)
+                z[i+1] = z0
+                
+        ctx.func = func
+        ctx.save_for_backward(t, z.clone(), f_theta)
+        return z
+    @staticmethod
+    def backward(ctx, dLdz):
+        func = ctx.func
+        t, z, f_theta = ctx.saved_tensors
+        # takes dimensions of z.size to get time length, batch size and hidden states
+        time_len, bs, *z_shape = z.size()
+        n_dim = np.prod(z_shape)
+        n_params = flat_parameters.size(0)
+        
+    def augment(augz, augt):
+
