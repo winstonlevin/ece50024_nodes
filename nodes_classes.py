@@ -59,29 +59,35 @@ class MNISTClassifier(nn.Module):
 
     (2) HIDDEN LAYER
         (2a.) NODE to integrate features to output
+        (2b.) Pool features of each pixel into single feature vector
 
     (3) OUTPUT LAYER
-        (3a.) Pool features of each pixel into a single feature vector
-        (3b.) Linear Transformation from feature vector to 10 possible classifications.
+        (3.) Linear Transformation from feature vector to 10 possible classifications.
     """
     def __init__(self, n_features: int = 64):
         super(MNISTClassifier, self).__init__()
         # self.feature = ODEFunc()
+        # self.conv1 = nn.Conv2d(1, n_features, kernel_size=3, padding=1)
+        # self.relu1 = nn.ReLU(inplace=True)
+        # self.pool1 = nn.AdaptiveAvgPool2d((1, 1))
+        # self.linear = nn.Linear(n_features, 10)
         self.input_layer = nn.Sequential(
             nn.Conv2d(1, n_features, kernel_size=3, padding=1),  # in_channel (1 for grayscale), out_channels
             nn.ReLU(inplace=True)  # inplace=True argument modifies the input tensor directly, saving memory.
         )
         # self.hidden_layer = NODEModule()
-        self.output_layer = nn.Sequential(
-            nn.AdaptiveAvgPool2d((1, 1)),
-            nn.Linear(n_features, 10)
-        )
+        self.hidden_layer = nn.AdaptiveAvgPool2d((1, 1))
+        self.output_layer = nn.Linear(n_features, 10)
 
-    def forward(self, x):
-        out = self.input_layer(x)
+    def forward(self, _state):
+        _state = self.input_layer(_state)  # Extract features from each pixel
+        _state = self.hidden_layer(_state)  # Propagate NODE / ResNet
+        _state = torch.flatten(_state, 1)  # Remove extra dimensions for linear transform
+        _state = self.output_layer(_state)  # Convert pool of features to classifications
+        # out = self.input_layer(x)
         # out = self.hidden_layer(x)
-        out = self.output_layer(x)
-        return out
+        # out = self.output_layer(x)
+        return _state
 
 
 def test(_model, _test_loader, _criterion, _device):  #testing func
