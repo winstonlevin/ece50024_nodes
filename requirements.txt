@@ -5,4 +5,4 @@ scipy
 matplotlib
 torch
 torchvision
-pickle
+matplotlib==3.5.3

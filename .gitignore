@@ -2,9 +2,12 @@
 *egg-info
 .idea/
 
+# PIP Files
+__pycache__/
+
 # VIM files
 *~
 
-# PyTorch Data
-data/
+# Saved Data
+tmp/
 
