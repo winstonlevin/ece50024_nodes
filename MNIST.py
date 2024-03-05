@@ -6,7 +6,7 @@ import torch.nn as nn
 from torchvision import datasets, transforms
 import matplotlib.pyplot as plt
 
-from nodes_classes import NeuralODE, train, test
+from nodes_classes import MNISTClassifier, train, test, NeuralODE
 
 # Define transformations
 # transform = torchvision.transforms.Compose([torchvision.transforms.ToTensor(), torchvision.transforms.Normalize((img_mean,), (img_std,))]
@@ -42,11 +42,12 @@ try:
     for epoch in range(num_epochs):
         test_accuracy = test(model, test_loader, criterion, device)
         test_accuracies.append(test_accuracy)
+        print(f"Trial [{epoch + 1}/{num_epochs}], Test Accuracy: {test_accuracy:.2f}%")
 
     model_loaded = True
 except FileNotFoundError:
     # Initialize the model, loss function, and optimizer
-    model = NeuralODE().to(device)
+    model = MNISTClassifier().to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
     # Training loop
