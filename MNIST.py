@@ -1,3 +1,5 @@
+import pickle
+
 import torch
 import torch.nn as nn
 from torchvision import datasets, transforms
@@ -9,12 +11,14 @@ import matplotlib.pyplot as plt
 transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5,), (0.5,))])
 
 # Load MNIST dataset
-train_set = datasets.MNIST('data/', download=True, train=True, transform=transform)
-test_set = datasets.MNIST('data/', download=True, train=False, transform=transform)
+train_set = datasets.MNIST('tmp/data/', download=True, train=True, transform=transform)
+test_set = datasets.MNIST('tmp/data/', download=True, train=False, transform=transform)
 
 # Data loaders
-train_loader = torch.utils.data.DataLoader(train_set, batch_size = 64, shuffle=True)
-test_loader = torch.utils.data.DataLoader(test_set, batch_size = 64, shuffle=False)
+train_loader = torch.utils.data.DataLoader(train_set, batch_size=32, shuffle=True)
+# train_loader = torch.utils.data.DataLoader(train_set, batch_size=64, shuffle=True)
+test_loader = torch.utils.data.DataLoader(test_set, batch_size=64, shuffle=False)
+
 
 # Define the Neural ODE architecture
 class ODEFunc(nn.Module):
@@ -28,10 +32,10 @@ class ODEFunc(nn.Module):
     # forward pass of the neural network
     def forward(self, x):
         self.nfe += 1
-        out = self.conv1(x) # apply first convolution layer to input tensor x
-        out = self.relu(out) # apply ReLU function element-wise to output
-        out = self.conv2(out) # apply second convolution layer to output
-        out = self.relu(out) # apply ReLU function element-wise to output
+        out = self.conv1(x)  # apply first convolution layer to input tensor x
+        out = self.relu(out)  # apply ReLU function element-wise to output
+        out = self.conv2(out)  # apply second convolution layer to output
+        out = self.relu(out)  # apply ReLU function element-wise to output
         return out
 
 
@@ -50,28 +54,28 @@ class NeuralODE(nn.Module):
         return x
 
 
-def train(model, train_loader, optimizer, criterion): #training func
-    model.train()
+def train(_model, _train_loader, _optimizer, _criterion): #training func
+    _model.train()
     running_loss = 0.0
-    for inputs, labels in train_loader:
+    for inputs, labels in _train_loader:
         inputs, labels = inputs.to(device), labels.to(device)
-        optimizer.zero_grad()
-        outputs = model(inputs)
-        loss = criterion(outputs, labels)
+        _optimizer.zero_grad()
+        outputs = _model(inputs)
+        loss = _criterion(outputs, labels)
         loss.backward()
-        optimizer.step()
+        _optimizer.step()
         running_loss += loss.item() * inputs.size(0)
-    return running_loss / len(train_loader.dataset)
+    return running_loss / len(_train_loader.dataset)
 
 
-def test(model, test_loader, criterion): #testing func
-    model.eval()
+def test(_model, _test_loader, _criterion):  #testing func
+    _model.eval()
     correct = 0
     total = 0
     with torch.no_grad():
-        for inputs, labels in test_loader:
+        for inputs, labels in _test_loader:
             inputs, labels = inputs.to(device), labels.to(device)
-            outputs = model(inputs)
+            outputs = _model(inputs)
             _, predicted = torch.max(outputs.data, 1)
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
@@ -88,7 +92,7 @@ criterion = nn.CrossEntropyLoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
 # Training loop
-num_epochs = 10
+num_epochs = 2
 train_losses = []
 test_accuracies = []
 for epoch in range(num_epochs):
@@ -98,20 +102,25 @@ for epoch in range(num_epochs):
     test_accuracies.append(test_accuracy)
     print(f"Epoch [{epoch+1}/{num_epochs}], Train Loss: {train_loss:.4f}, Test Accuracy: {test_accuracy:.2f}%")
 
-# Plotting the training loss and test accuracy
-plt.figure(figsize=(10, 5))
-plt.subplot(1, 2, 1)
-plt.plot(train_losses)
-plt.xlabel('Epoch')
-plt.ylabel('Training Loss')
-plt.title('Training Loss vs. Epoch')
+# Save Model
+with open('tmp/models/MNIST.data') as file:
+    pickle.dump(model, file)
 
-plt.subplot(1, 2, 2)
-plt.plot(test_accuracies)
-plt.xlabel('Epoch')
-plt.ylabel('Test Accuracy (%)')
-plt.title('Test Accuracy vs. Epoch')
-
-plt.tight_layout()
-plt.show()
+# # Plotting the training loss and test accuracy
+# fig_accuracy = plt.figure(figsize=(10, 5))
+# ax_loss = fig_accuracy.add_subplot(121)
+# ax_loss.plot(train_losses)
+# ax_loss.xlabel('Epoch')
+# ax_loss.ylabel('Training Loss')
+# ax_loss.title('Training Loss vs. Epoch')
+#
+# ax_accuracy = fig_accuracy.add_subplot(122)
+# ax_accuracy.plot(test_accuracies)
+# ax_accuracy.xlabel('Epoch')
+# ax_accuracy.ylabel('Test Accuracy (%)')
+# ax_accuracy.title('Test Accuracy vs. Epoch')
+#
+# fig_accuracy.tight_layout()
+#
+# plt.show()
 

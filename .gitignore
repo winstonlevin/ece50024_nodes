@@ -4,3 +4,7 @@
 
 # VIM files
 *~
+
+# PyTorch Data
+data/
+
