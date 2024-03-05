@@ -6,7 +6,7 @@ import torch.nn as nn
 from torchvision import datasets, transforms
 import matplotlib.pyplot as plt
 
-from nodes_classes import MNISTClassifier, train, test, NeuralODE
+from nodes_classes import MNISTClassifier, train, test
 
 # Define transformations
 # transform = torchvision.transforms.Compose([torchvision.transforms.ToTensor(), torchvision.transforms.Normalize((img_mean,), (img_std,))]
@@ -18,8 +18,19 @@ train_set = datasets.MNIST('tmp/data/', download=True, train=True, transform=tra
 test_set = datasets.MNIST('tmp/data/', download=True, train=False, transform=transform)
 
 # Data loaders
-train_loader = torch.utils.data.DataLoader(train_set, batch_size=32, shuffle=True)
-# train_loader = torch.utils.data.DataLoader(train_set, batch_size=64, shuffle=True)
+batch_size = 32
+train_loader = torch.utils.data.DataLoader(train_set, batch_size=batch_size, shuffle=True)
+test_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuffle=False)
+small_data_set = True
+
+if small_data_set:
+    # To simply ensure implementation works, use small subset of data which is fast to train/test
+    n_data = 2 * batch_size
+    train_loader.dataset.data = train_loader.dataset.data[0:n_data, :, :]
+    train_loader.dataset.targets = train_loader.dataset.targets[0:n_data]
+    test_loader.dataset.data = test_loader.dataset.data[0:n_data, :, :]
+    test_loader.dataset.targets = test_loader.dataset.targets[0:n_data]
+
 
 # Device configuration
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -37,8 +48,6 @@ try:
     with open(file_name, 'rb') as f:
         model = pickle.load(f)
 
-    test_loader = torch.utils.data.DataLoader(test_set, batch_size=64, shuffle=True)
-
     for epoch in range(num_epochs):
         test_accuracy = test(model, test_loader, criterion, device)
         test_accuracies.append(test_accuracy)
@@ -51,8 +60,6 @@ except FileNotFoundError:
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
     # Training loop
-    test_loader = torch.utils.data.DataLoader(test_set, batch_size=64, shuffle=False)
-
     for epoch in range(num_epochs):
         train_loss = train(model, train_loader, optimizer, criterion, device)
         train_losses.append(train_loss)
@@ -60,9 +67,9 @@ except FileNotFoundError:
         test_accuracies.append(test_accuracy)
         print(f"Epoch [{epoch+1}/{num_epochs}], Train Loss: {train_loss:.4f}, Test Accuracy: {test_accuracy:.2f}%")
 
-    # Save Model
-    with open(file_name, 'wb') as f:
-        pickle.dump(model, f, protocol=pickle.HIGHEST_PROTOCOL)
+    # # Save Model
+    # with open(file_name, 'wb') as f:
+    #     pickle.dump(model, f, protocol=pickle.HIGHEST_PROTOCOL)
 
 # Plotting the training loss and test accuracy
 fig_accuracy = plt.figure(figsize=(10, 5))
