@@ -4,7 +4,7 @@ from torchvision import datasets, transforms
 import matplotlib.pyplot as plt
 import torchdiffeq
 
-# Formatting based off Jupyter code demo https://nbviewer.org/github/msurtsukov/neural-ode/blob/master/Neural%20ODEs.ipynb
+# Original Jupyter code demo https://nbviewer.org/github/msurtsukov/neural-ode/blob/master/Neural%20ODEs.ipynb
 
 # ===================== Dataset Preprocessing ==========================
 # Define transformations to be done to input images
