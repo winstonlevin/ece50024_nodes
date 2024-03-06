@@ -25,7 +25,7 @@ small_data_set = True
 
 if small_data_set:
     # To simply ensure implementation works, use small subset of data which is fast to train/test
-    n_data = 2 * batch_size
+    n_data = 21 * batch_size
     train_loader.dataset.data = train_loader.dataset.data[0:n_data, :, :]
     train_loader.dataset.targets = train_loader.dataset.targets[0:n_data]
     test_loader.dataset.data = test_loader.dataset.data[0:n_data, :, :]
@@ -40,7 +40,7 @@ file_name = 'tmp/models/MNIST.pickle'
 os.makedirs(os.path.dirname(file_name), exist_ok=True)
 train_losses = []
 test_accuracies = []
-num_epochs = 2
+num_epochs = 10
 criterion = nn.CrossEntropyLoss()
 model_loaded = False
 
@@ -61,15 +61,15 @@ except FileNotFoundError:
 
     # Training loop
     for epoch in range(num_epochs):
-        train_loss = train(model, train_loader, optimizer, criterion, device)
+        train_loss = train(model, train_loader, optimizer, criterion, device, verbose=True)
         train_losses.append(train_loss)
         test_accuracy = test(model, test_loader, device)
         test_accuracies.append(test_accuracy)
         print(f"Epoch [{epoch+1}/{num_epochs}], Train Loss: {train_loss:.4f}, Test Accuracy: {test_accuracy:.2f}%")
 
-    # # Save Model
-    # with open(file_name, 'wb') as f:
-    #     pickle.dump(model, f, protocol=pickle.HIGHEST_PROTOCOL)
+    # Save Model
+    with open(file_name, 'wb') as f:
+        pickle.dump(model, f, protocol=pickle.HIGHEST_PROTOCOL)
 
 # Plotting the training loss and test accuracy
 fig_accuracy = plt.figure(figsize=(10, 5))

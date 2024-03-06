@@ -1,3 +1,4 @@
+import sys
 from abc import ABC, abstractmethod
 from typing import Optional, Callable
 
@@ -259,13 +260,22 @@ class MNISTClassifier(nn.Module):
     (3) OUTPUT LAYER
         Linear Transformation from feature vector to 10 possible classifications.
     """
-    def __init__(self, n_features: int = 64):
+    def __init__(self, n_features: int = 64, use_node=True):
         super(MNISTClassifier, self).__init__()
+        self.n_features = n_features
+        self.use_node = use_node
+
         self.input_layer = nn.Sequential(
             nn.Conv2d(1, n_features, kernel_size=3, padding=1),  # in_channel (1 for grayscale), out_channels
             nn.ReLU(inplace=True)  # inplace=True argument modifies the input tensor directly, saving memory.
         )
-        self.hidden_layer = IntegratedNODE(Conv2dNODE(n_features), solve_ivp_euler)
+        if use_node:
+            self.hidden_layer = IntegratedNODE(Conv2dNODE(n_features), solve_ivp_euler)
+        else:
+            self.hidden_layer = nn.Sequential(
+                nn.Conv2d(n_features, n_features, kernel_size=3, padding=1),  # in_channel (1 for grayscale), out_channels
+                nn.ReLU(inplace=True)  # inplace=True argument modifies the input tensor directly, saving memory.
+            )
         self.pool_layer = nn.AdaptiveAvgPool2d((1, 1))
         self.output_layer = nn.Linear(n_features, 10)
 
@@ -278,14 +288,20 @@ class MNISTClassifier(nn.Module):
         return _state
 
 
-def train(model, train_loader, optimizer, criterion, device):
+def train(model, train_loader, optimizer, criterion, device, verbose=True):
     """
     Function to train the model, using the optimizer to tune the parameters.
     """
     model.train()
     running_loss = 0.0
+    n_batches = len(train_loader)
+    idx_report = max(1, int(n_batches / 5))
+    if verbose:
+        print(f'\n')
+
     for idx, (inputs, labels) in enumerate(train_loader):
-        print(f'Batch #{idx}...')  # TODO - remove
+        if verbose and idx % idx_report == 0:
+            print(f'Batch #{idx+1}/{n_batches} (Ave. Loss = {running_loss / (idx+1):.4f})...')
         inputs, labels = inputs.to(device), labels.to(device)
         optimizer.zero_grad()
         outputs = model(inputs)
@@ -293,7 +309,8 @@ def train(model, train_loader, optimizer, criterion, device):
         loss.backward()
         optimizer.step()
         running_loss += loss.item() * inputs.size(0)
-    return running_loss / len(train_loader.dataset)
+
+    return running_loss / n_batches
 
 
 def test(model, test_loader, device):
