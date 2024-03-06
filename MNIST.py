@@ -8,17 +8,17 @@ import matplotlib.pyplot as plt
 
 from nodes_classes import MNISTClassifier, train, test
 
-# Define transformations
-# transform = torchvision.transforms.Compose([torchvision.transforms.ToTensor(), torchvision.transforms.Normalize((img_mean,), (img_std,))]
-# input tensor values used in Jupyter code: img_std = 0.3081, img_mean = 0.1307, or use 0.5 for both
-transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5,), (0.5,))])
+torch.autograd.set_detect_anomaly(True)  # TODO - Remove
 
-# Load MNIST dataset
+# Hyperparameters
+batch_size = 32
+n_features = 16
+
+# Load MNIST dataset and create loaders for training/testing
+transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5,), (0.5,))])
 train_set = datasets.MNIST('tmp/data/', download=True, train=True, transform=transform)
 test_set = datasets.MNIST('tmp/data/', download=True, train=False, transform=transform)
 
-# Data loaders
-batch_size = 32
 train_loader = torch.utils.data.DataLoader(train_set, batch_size=batch_size, shuffle=True)
 test_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuffle=False)
 small_data_set = True
@@ -49,21 +49,21 @@ try:
         model = pickle.load(f)
 
     for epoch in range(num_epochs):
-        test_accuracy = test(model, test_loader, criterion, device)
+        test_accuracy = test(model, test_loader, device)
         test_accuracies.append(test_accuracy)
         print(f"Trial [{epoch + 1}/{num_epochs}], Test Accuracy: {test_accuracy:.2f}%")
 
     model_loaded = True
 except FileNotFoundError:
     # Initialize the model, loss function, and optimizer
-    model = MNISTClassifier().to(device)
+    model = MNISTClassifier(n_features=n_features).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
     # Training loop
     for epoch in range(num_epochs):
         train_loss = train(model, train_loader, optimizer, criterion, device)
         train_losses.append(train_loss)
-        test_accuracy = test(model, test_loader, criterion, device)
+        test_accuracy = test(model, test_loader, device)
         test_accuracies.append(test_accuracy)
         print(f"Epoch [{epoch+1}/{num_epochs}], Train Loss: {train_loss:.4f}, Test Accuracy: {test_accuracy:.2f}%")
 
