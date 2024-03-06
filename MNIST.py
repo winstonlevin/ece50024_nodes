@@ -1,5 +1,6 @@
 import os
 import pickle
+import time
 
 import torch
 import torch.nn as nn
@@ -21,7 +22,7 @@ test_set = datasets.MNIST('tmp/data/', download=True, train=False, transform=tra
 
 train_loader = torch.utils.data.DataLoader(train_set, batch_size=batch_size, shuffle=True)
 test_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuffle=False)
-small_data_set = True
+small_data_set = False
 
 if small_data_set:
     # To simply ensure implementation works, use small subset of data which is fast to train/test
@@ -35,41 +36,32 @@ if small_data_set:
 # Device configuration
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-# Specify model to load/create
-file_name = 'tmp/models/MNIST.pickle'
-os.makedirs(os.path.dirname(file_name), exist_ok=True)
 train_losses = []
 test_accuracies = []
 num_epochs = 10
 criterion = nn.CrossEntropyLoss()
 model_loaded = False
 
-try:
-    with open(file_name, 'rb') as f:
-        model = pickle.load(f)
+# Initialize the model, loss function, and optimizer
+model = MNISTClassifier(n_features=n_features).to(device)
+optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
-    for epoch in range(num_epochs):
-        test_accuracy = test(model, test_loader, device)
-        test_accuracies.append(test_accuracy)
-        print(f"Trial [{epoch + 1}/{num_epochs}], Test Accuracy: {test_accuracy:.2f}%")
+# Training loop
+for epoch in range(num_epochs):
+    train_loss = train(model, train_loader, optimizer, criterion, device, verbose=True)
+    train_losses.append(train_loss)
+    test_accuracy = test(model, test_loader, device)
+    test_accuracies.append(test_accuracy)
+    print(f"Epoch [{epoch + 1}/{num_epochs}], Train Loss: {train_loss:.4f}, Test Accuracy: {test_accuracy:.2f}%")
 
-    model_loaded = True
-except FileNotFoundError:
-    # Initialize the model, loss function, and optimizer
-    model = MNISTClassifier(n_features=n_features).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-
-    # Training loop
-    for epoch in range(num_epochs):
-        train_loss = train(model, train_loader, optimizer, criterion, device, verbose=True)
-        train_losses.append(train_loss)
-        test_accuracy = test(model, test_loader, device)
-        test_accuracies.append(test_accuracy)
-        print(f"Epoch [{epoch+1}/{num_epochs}], Train Loss: {train_loss:.4f}, Test Accuracy: {test_accuracy:.2f}%")
-
-    # Save Model
-    with open(file_name, 'wb') as f:
-        pickle.dump(model, f, protocol=pickle.HIGHEST_PROTOCOL)
+# Save Model
+current_time = time.gmtime()
+date = f'{current_time.tm_year:04d}-{current_time.tm_mon:02d}-{current_time.tm_mday:02d}'
+hour = f'{current_time.tm_hour:02d}:{current_time.tm_min:02d}:{current_time.tm_sec:02d}'
+file_name = f'tmp/models/MNIST_{date}_{hour}.pickle'
+os.makedirs(os.path.dirname(file_name), exist_ok=True) # Make directory if it does not yet exist
+with open(file_name, 'wb') as f:
+    pickle.dump(model, f, protocol=pickle.HIGHEST_PROTOCOL)
 
 # Plotting the training loss and test accuracy
 fig_accuracy = plt.figure(figsize=(10, 5))
