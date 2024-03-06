@@ -12,8 +12,8 @@ from nodes_classes import MNISTClassifier, train, test
 torch.autograd.set_detect_anomaly(True)  # TODO - Remove
 
 # Hyperparameters
-batch_size = 32
-n_features = 16
+batch_size = 64
+n_features = 64
 
 # Load MNIST dataset and create loaders for training/testing
 transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5,), (0.5,))])
@@ -36,28 +36,25 @@ if small_data_set:
 # Device configuration
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-train_losses = []
-test_accuracies = []
 num_epochs = 10
 criterion = nn.CrossEntropyLoss()
-model_loaded = False
 
 # Initialize the model, loss function, and optimizer
-model = MNISTClassifier(n_features=n_features).to(device)
+model = MNISTClassifier(n_features=n_features, use_node=False).to(device)
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
 # Training loop
 for epoch in range(num_epochs):
     train_loss = train(model, train_loader, optimizer, criterion, device, verbose=True)
-    train_losses.append(train_loss)
+    model.train_losses.append(train_loss)
     test_accuracy = test(model, test_loader, device)
-    test_accuracies.append(test_accuracy)
+    model.test_accuracies.append(test_accuracy)
     print(f"Epoch [{epoch + 1}/{num_epochs}], Train Loss: {train_loss:.4f}, Test Accuracy: {test_accuracy:.2f}%")
 
 # Save Model
 current_time = time.gmtime()
 date = f'{current_time.tm_year:04d}-{current_time.tm_mon:02d}-{current_time.tm_mday:02d}'
-hour = f'{current_time.tm_hour:02d}:{current_time.tm_min:02d}:{current_time.tm_sec:02d}'
+hour = f'{current_time.tm_hour:02d}-{current_time.tm_min:02d}-{current_time.tm_sec:02d}'
 file_name = f'tmp/models/MNIST_{date}_{hour}.pickle'
 os.makedirs(os.path.dirname(file_name), exist_ok=True)  # Make directory if it does not yet exist
 with open(file_name, 'wb') as f:
@@ -68,19 +65,19 @@ fig_accuracy = plt.figure(figsize=(10, 5))
 
 if model_loaded:
     ax_accuracy = fig_accuracy.add_subplot(111)
-    ax_accuracy.plot(test_accuracies)
+    ax_accuracy.plot(model.test_accuracies)
     ax_accuracy.set_xlabel('Trial')
     ax_accuracy.set_ylabel('Test Accuracy (%)')
     ax_accuracy.set_title('Test Accuracies')
 else:
     ax_loss = fig_accuracy.add_subplot(121)
-    ax_loss.plot(train_losses)
+    ax_loss.plot(model.train_losses)
     ax_loss.set_xlabel('Epoch')
     ax_loss.set_ylabel('Training Loss')
     ax_loss.set_title('Training Loss vs. Epoch')
 
     ax_accuracy = fig_accuracy.add_subplot(122)
-    ax_accuracy.plot(test_accuracies)
+    ax_accuracy.plot(model.test_accuracies)
     ax_accuracy.set_xlabel('Epoch')
     ax_accuracy.set_ylabel('Test Accuracy (%)')
     ax_accuracy.set_title('Test Accuracy vs. Epoch')

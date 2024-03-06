@@ -279,6 +279,10 @@ class MNISTClassifier(nn.Module):
         self.pool_layer = nn.AdaptiveAvgPool2d((1, 1))
         self.output_layer = nn.Linear(n_features, 10)
 
+        # Storage of training information
+        self.train_losses = []
+        self.test_accuracies = []
+
     def forward(self, _state):
         _state = self.input_layer(_state)  # Extract features from each pixel
         _state = self.hidden_layer(_state)  # Propagate NODE
