@@ -59,7 +59,7 @@ current_time = time.gmtime()
 date = f'{current_time.tm_year:04d}-{current_time.tm_mon:02d}-{current_time.tm_mday:02d}'
 hour = f'{current_time.tm_hour:02d}:{current_time.tm_min:02d}:{current_time.tm_sec:02d}'
 file_name = f'tmp/models/MNIST_{date}_{hour}.pickle'
-os.makedirs(os.path.dirname(file_name), exist_ok=True) # Make directory if it does not yet exist
+os.makedirs(os.path.dirname(file_name), exist_ok=True)  # Make directory if it does not yet exist
 with open(file_name, 'wb') as f:
     pickle.dump(model, f, protocol=pickle.HIGHEST_PROTOCOL)
 

@@ -219,7 +219,7 @@ class Conv2dNODE(NODEGradientModule):
             nn.Conv2d(
                 n_features+1, n_features, kernel_size=3, padding=1, bias=False
             ),
-            nn.ReLU(inplace=False)  # TODO - is inplace ok?
+            nn.ReLU(inplace=True)
         )
 
     @staticmethod
@@ -252,7 +252,7 @@ class MNISTClassifier(nn.Module):
         (1b.) ReLU activation of features
 
     (2) HIDDEN LAYER
-        Integration of Convolutional NODE for features
+        Integration of Convolutional NODE for features (if use_node) or a conventional convolution layer
 
     (3) POOL LAYER
         Pool features of each pixel into single feature vector
@@ -273,8 +273,8 @@ class MNISTClassifier(nn.Module):
             self.hidden_layer = IntegratedNODE(Conv2dNODE(n_features), solve_ivp_euler)
         else:
             self.hidden_layer = nn.Sequential(
-                nn.Conv2d(n_features, n_features, kernel_size=3, padding=1),  # in_channel (1 for grayscale), out_channels
-                nn.ReLU(inplace=True)  # inplace=True argument modifies the input tensor directly, saving memory.
+                nn.Conv2d(n_features, n_features, kernel_size=3, padding=1),
+                nn.ReLU(inplace=True)
             )
         self.pool_layer = nn.AdaptiveAvgPool2d((1, 1))
         self.output_layer = nn.Linear(n_features, 10)
