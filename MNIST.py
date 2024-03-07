@@ -7,7 +7,7 @@ import torch.nn as nn
 from torchvision import datasets, transforms
 import matplotlib.pyplot as plt
 
-from nodes_classes import MNISTClassifier, train, test, solve_ivp_euler
+from nodes_classes import MNISTClassifier, train, test, EulerIntegrator
 
 torch.autograd.set_detect_anomaly(True)  # TODO - Remove
 
@@ -31,21 +31,18 @@ if small_data_set:
     train_loader.dataset.targets = train_loader.dataset.targets[0:n_data]
     test_loader.dataset.data = test_loader.dataset.data[0:n_data, :, :]
     test_loader.dataset.targets = test_loader.dataset.targets[0:n_data]
+    num_epochs = 1
+else:
+    num_epochs = 10
 
 
 # Device configuration
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-num_epochs = 10
 criterion = nn.CrossEntropyLoss()
 
 
 # Initialize the model, loss function, and optimizer
-def integrator(fun, t_span, y0):
-    return solve_ivp_euler(fun, t_span, y0, n_steps=20)
-
-
-model = MNISTClassifier(n_features=n_features, use_node=True, integrator=integrator).to(device)
+model = MNISTClassifier(n_features=n_features, use_node=True, integrator=EulerIntegrator(n_steps=20)).to(device)
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
 # Training loop

@@ -7,24 +7,30 @@ from torch import Tensor
 import torch.nn as nn
 
 
-def solve_ivp_euler(fun: Callable, t_span: Tensor, y0: Tensor, n_steps: int = 5):
-    """
-    Solve IVP using Euler's method parameterized by the number of integration steps.
+class EulerIntegrator:
+    def __init__(self, n_steps: int = 5):
+        self.n_steps = n_steps
 
-    :param fun: Dynamic function dy/dt = f(t, y)
-    :param t_span:
-    :param y0:
-    :param n_steps:
-    :return:
-    """
-    dt = (t_span[1] - t_span[0]) / float(n_steps)
-    t = torch.as_tensor(t_span[0], dtype=y0.dtype, device=y0.device).clone()
-    y = y0.clone()
+    def solve_ivp(self, fun: Callable, t_span: Tensor, y0: Tensor):
+        """
+        Solve IVP using Euler's method parameterized by the number of integration steps.
 
-    for i_step in range(n_steps):
-        y += dt * fun(t, y)
-        t += dt
-    return y
+        :param fun: Dynamic function dy/dt = f(t, y)
+        :param t_span:
+        :param y0:
+        :return:
+        """
+        dt = (t_span[1] - t_span[0]) / float(self.n_steps)
+        t = torch.as_tensor(t_span[0], dtype=y0.dtype, device=y0.device).clone()
+        y = y0.clone()
+
+        for i_step in range(self.n_steps):
+            y += dt * fun(t, y)
+            t += dt
+        return y
+
+    def __call__(self, fun: Callable, t_span: Tensor, y0: Tensor):
+        return self.solve_ivp(fun, t_span, y0)
 
 
 class NODEGradientModule(nn.Module, ABC):
@@ -260,7 +266,10 @@ class MNISTClassifier(nn.Module):
     (3) OUTPUT LAYER
         Linear Transformation from feature vector to 10 possible classifications.
     """
-    def __init__(self, n_features: int = 64, use_node=True, integrator=solve_ivp_euler):
+    def __init__(self, n_features: int = 64, use_node=True, integrator: Optional[Callable] = None):
+        if integrator is None:
+            integrator = EulerIntegrator()
+
         super(MNISTClassifier, self).__init__()
         self.n_features = n_features
         self.use_node = use_node
