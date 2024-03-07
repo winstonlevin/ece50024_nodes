@@ -1,0 +1,13 @@
+# PyCharm Files
+*egg-info
+.idea/
+
+# PIP Files
+__pycache__/
+
+# VIM files
+*~
+
+# Saved Data
+tmp/
+
