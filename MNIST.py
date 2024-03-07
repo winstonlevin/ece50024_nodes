@@ -7,7 +7,7 @@ import torch.nn as nn
 from torchvision import datasets, transforms
 import matplotlib.pyplot as plt
 
-from nodes_classes import MNISTClassifier, train, test
+from nodes_classes import MNISTClassifier, train, test, solve_ivp_euler
 
 torch.autograd.set_detect_anomaly(True)  # TODO - Remove
 
@@ -39,8 +39,13 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 num_epochs = 10
 criterion = nn.CrossEntropyLoss()
 
+
 # Initialize the model, loss function, and optimizer
-model = MNISTClassifier(n_features=n_features, use_node=False).to(device)
+def integrator(fun, t_span, y0):
+    return solve_ivp_euler(fun, t_span, y0, n_steps=20)
+
+
+model = MNISTClassifier(n_features=n_features, use_node=True, integrator=integrator).to(device)
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
 # Training loop
@@ -63,26 +68,18 @@ with open(file_name, 'wb') as f:
 # Plotting the training loss and test accuracy
 fig_accuracy = plt.figure(figsize=(10, 5))
 
-if model_loaded:
-    ax_accuracy = fig_accuracy.add_subplot(111)
-    ax_accuracy.plot(model.test_accuracies)
-    ax_accuracy.set_xlabel('Trial')
-    ax_accuracy.set_ylabel('Test Accuracy (%)')
-    ax_accuracy.set_title('Test Accuracies')
-else:
-    ax_loss = fig_accuracy.add_subplot(121)
-    ax_loss.plot(model.train_losses)
-    ax_loss.set_xlabel('Epoch')
-    ax_loss.set_ylabel('Training Loss')
-    ax_loss.set_title('Training Loss vs. Epoch')
+ax_loss = fig_accuracy.add_subplot(121)
+ax_loss.plot(model.train_losses)
+ax_loss.set_xlabel('Epoch')
+ax_loss.set_ylabel('Training Loss')
+ax_loss.set_title('Training Loss vs. Epoch')
 
-    ax_accuracy = fig_accuracy.add_subplot(122)
-    ax_accuracy.plot(model.test_accuracies)
-    ax_accuracy.set_xlabel('Epoch')
-    ax_accuracy.set_ylabel('Test Accuracy (%)')
-    ax_accuracy.set_title('Test Accuracy vs. Epoch')
+ax_accuracy = fig_accuracy.add_subplot(122)
+ax_accuracy.plot(model.test_accuracies)
+ax_accuracy.set_xlabel('Epoch')
+ax_accuracy.set_ylabel('Test Accuracy (%)')
+ax_accuracy.set_title('Test Accuracy vs. Epoch')
 
 fig_accuracy.tight_layout()
 
 plt.show()
-

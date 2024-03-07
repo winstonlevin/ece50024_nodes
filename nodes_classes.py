@@ -260,7 +260,7 @@ class MNISTClassifier(nn.Module):
     (3) OUTPUT LAYER
         Linear Transformation from feature vector to 10 possible classifications.
     """
-    def __init__(self, n_features: int = 64, use_node=True):
+    def __init__(self, n_features: int = 64, use_node=True, integrator=solve_ivp_euler):
         super(MNISTClassifier, self).__init__()
         self.n_features = n_features
         self.use_node = use_node
@@ -270,7 +270,7 @@ class MNISTClassifier(nn.Module):
             nn.ReLU(inplace=True)  # inplace=True argument modifies the input tensor directly, saving memory.
         )
         if use_node:
-            self.hidden_layer = IntegratedNODE(Conv2dNODE(n_features), solve_ivp_euler)
+            self.hidden_layer = IntegratedNODE(Conv2dNODE(n_features), integrator=integrator)
         else:
             self.hidden_layer = nn.Sequential(
                 nn.Conv2d(n_features, n_features, kernel_size=3, padding=1),
