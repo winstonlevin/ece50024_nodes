@@ -35,7 +35,7 @@ class EulerIntegrator:
 class RKIntegrator:
     def __init__(self, n_steps: int = 5):
         self.n_steps = n_steps
-    def solve_ivp(self, fun: Callable, t_span: Tensor, y0: Tensor):
+    def solve_ivpRK(self, fun: Callable, t_span: Tensor, y0: Tensor):
         """
         Solve IVP using Euler's method parameterized by the number of integration steps.
 
@@ -49,12 +49,18 @@ class RKIntegrator:
         y = y0.clone()
 
         for i_step in range(self.n_steps):
-            y += dt * fun(t, y)
+            #y += dt * fun(t, y)
+            part1 = fun(t, y)
+            part2 = fun(t + (dt / 2), y + (dt * part1 / 2))
+            part3 = fun(t + (dt / 2), y + (dt * part2 / 2))
+            part4 = fun(t + (dt), y + (dt * part3))
+            y += y + ((dt / 6)*(part1 + (2 * part2) + (2 * part3) + (part4)))
+
             t += dt
         return y
 
     def __call__(self, fun: Callable, t_span: Tensor, y0: Tensor):
-        return self.solve_ivp(fun, t_span, y0)
+        return self.solve_ivpRK(fun, t_span, y0)
 
 
 class NODEGradientModule(nn.Module, ABC):
