@@ -32,6 +32,30 @@ class EulerIntegrator:
     def __call__(self, fun: Callable, t_span: Tensor, y0: Tensor):
         return self.solve_ivp(fun, t_span, y0)
 
+class RKIntegrator:
+    def __init__(self, n_steps: int = 5):
+        self.n_steps = n_steps
+    def solve_ivp(self, fun: Callable, t_span: Tensor, y0: Tensor):
+        """
+        Solve IVP using Euler's method parameterized by the number of integration steps.
+
+        :param fun: Dynamic function dy/dt = f(t, y)
+        :param t_span:
+        :param y0:
+        :return:
+        """
+        dt = (t_span[1] - t_span[0]) / float(self.n_steps)
+        t = torch.as_tensor(t_span[0], dtype=y0.dtype, device=y0.device).clone()
+        y = y0.clone()
+
+        for i_step in range(self.n_steps):
+            y += dt * fun(t, y)
+            t += dt
+        return y
+
+    def __call__(self, fun: Callable, t_span: Tensor, y0: Tensor):
+        return self.solve_ivp(fun, t_span, y0)
+
 
 class NODEGradientModule(nn.Module, ABC):
     """
