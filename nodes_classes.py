@@ -32,12 +32,14 @@ class EulerIntegrator:
     def __call__(self, fun: Callable, t_span: Tensor, y0: Tensor):
         return self.solve_ivp(fun, t_span, y0)
 
+
 class RKIntegrator:
-    def __init__(self, n_steps: int = 5):
-        self.n_steps = n_steps
-    def solve_ivpRK(self, fun: Callable, t_span: Tensor, y0: Tensor):
+    def __init__(self, tol: float = 1e-3):
+        self.tol = tol
+
+    def solve_ivp(self, fun: Callable, t_span: Tensor, y0: Tensor):
         """
-        Solve IVP using Euler's method parameterized by the number of integration steps.
+        Solve IVP using 4/5th order Runga-Kutta method with an adaptive step size parameterized by error tolerance.
 
         :param fun: Dynamic function dy/dt = f(t, y)
         :param t_span:
@@ -48,6 +50,7 @@ class RKIntegrator:
         t = torch.as_tensor(t_span[0], dtype=y0.dtype, device=y0.device).clone()
         y = y0.clone()
 
+        # TODO
         for i_step in range(self.n_steps):
             #y += dt * fun(t, y)
             part1 = fun(t, y)
@@ -59,8 +62,25 @@ class RKIntegrator:
             t += dt
         return y
 
+    def rk45_step(self, fun: Callable, t_span: Tensor, y0: Tensor):
+        """Tableau for Dormand-Prince method used (see https://en.wikipedia.org/wiki/Dormand%E2%80%93Prince_method)"""
+        t0 = t_span[0]
+        dt = t_span[1] - t_span[0]
+        k1 = fun(t0, y0)
+        k2 = fun(t0 + 0.2*dt, y0 + 0.2*k1*dt)
+        k3 = fun(t0 + 0.3*dt, y0 + (0.075*k1 + 0.225*k2) * dt)
+        k4 = fun(t0 + 0.8*dt, y0 + (44/45*k1 - 56/15*k2 + 32/9*k3) * dt)
+        k5 = fun(t0 + 8/9*dt, y0 + (19372/6561*k1 - 25360/2187*k2 + 64448/6561*k3 - 212/729*k4) * dt)
+        k6 = fun(t0 + dt, y0 + (9017/3168*k1 - 355/33*k2 + 46732/5247*k3 + 49/176*k4 - 5103/18656*k5) * dt)
+        k7 = fun(t0 + dt, y0 + (35/384*k1 + 500/1113*k3 + 125/192*k4 - 2187/6784*k5 + 11/84*k6) * dt)
+
+        y_4th_order = y0 + 35/384*k1 + 500/1113*k3 + 125/192*k4 - 2187/6784*k5 + 11/84*k6
+        y_5th_order = y0 + 5179/57600*k1 + 7571/16695*k3 + 393/640*k4 - 92097/339200*k5 + 187/2100*k6 + 1/40*k7
+
+        return y_4th_order, y_5th_order
+
     def __call__(self, fun: Callable, t_span: Tensor, y0: Tensor):
-        return self.solve_ivpRK(fun, t_span, y0)
+        return self.solve_ivp(fun, t_span, y0)
 
 
 class NODEGradientModule(nn.Module, ABC):
