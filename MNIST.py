@@ -7,7 +7,7 @@ import torch.nn as nn
 from torchvision import datasets, transforms
 import matplotlib.pyplot as plt
 
-from nodes_classes import MNISTClassifier, train, test, EulerIntegrator
+from nodes_classes import MNISTClassifier, train, test, EulerIntegrator, RKIntegrator
 
 torch.autograd.set_detect_anomaly(True)  # TODO - Remove
 

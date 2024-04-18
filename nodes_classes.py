@@ -1,7 +1,7 @@
 import sys
 from abc import ABC, abstractmethod
 from typing import Optional, Callable
-
+import numpy as np
 import torch
 from torch import Tensor
 import torch.nn as nn
@@ -46,26 +46,33 @@ class RKIntegrator:
         :param y0:
         :return:
         """
+        #Set initial step size
         dt = (t_span[1] - t_span[0]) / float(self.n_steps)
+
+        #Discrete time points
+        Ts = t_span[1] / dt
+
+
         t = torch.as_tensor(t_span[0], dtype=y0.dtype, device=y0.device).clone()
         y = y0.clone()
 
+        e = 0.001
         # TODO
-        for i_step in range(self.n_steps):
-            #y += dt * fun(t, y)
-            part1 = fun(t, y)
-            part2 = fun(t + (dt / 2), y + (dt * part1 / 2))
-            part3 = fun(t + (dt / 2), y + (dt * part2 / 2))
-            part4 = fun(t + (dt), y + (dt * part3))
-            y += y + ((dt / 6)*(part1 + (2 * part2) + (2 * part3) + (part4)))
-
-            t += dt
+        for t_i in range(Ts - 1):
+            #do RK 4 and 5 steps
+            h = dt
+            rk4, rk5 = rk45_step(fun, t_span, y, h)
+            error = np.abs(rk5 - rk4)
+            s = ((e * h) / (2 * error)) ** 5
+            h = s * h
+            y += rk5
+            t += h
         return y
 
-    def rk45_step(self, fun: Callable, t_span: Tensor, y0: Tensor):
+    def rk45_step(self, fun: Callable, t_span: Tensor, y0: Tensor, dt):
         """Tableau for Dormand-Prince method used (see https://en.wikipedia.org/wiki/Dormand%E2%80%93Prince_method)"""
         t0 = t_span[0]
-        dt = t_span[1] - t_span[0]
+        # dt = t_span[1] - t_span[0]
         k1 = fun(t0, y0)
         k2 = fun(t0 + 0.2*dt, y0 + 0.2*k1*dt)
         k3 = fun(t0 + 0.3*dt, y0 + (0.075*k1 + 0.225*k2) * dt)
