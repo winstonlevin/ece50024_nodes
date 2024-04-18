@@ -33,6 +33,9 @@ class EulerIntegrator:
         return self.solve_ivp(fun, t_span, y0)
 
 
+solve_ivp_euler = EulerIntegrator(n_steps=5)
+
+
 class RKIntegrator:
     def __init__(self, tol: float = 1e-3):
         self.tol = tol

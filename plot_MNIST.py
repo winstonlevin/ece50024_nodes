@@ -1,7 +1,6 @@
 import pickle
 from matplotlib import pyplot as plt
 
-from nodes_classes import solve_ivp_euler
 
 # Load models
 with open('canonical/MNIST/Non_NODE_Baseline.pickle', 'rb') as f:
