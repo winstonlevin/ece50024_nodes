@@ -47,29 +47,29 @@ class RKIntegrator:
         :return:
         """
         #Set initial step size
-        dt = (t_span[1] - t_span[0]) / float(self.n_steps)
-
-        #Discrete time points
-        Ts = t_span[1] / dt
-
+        dt = (t_span[1] - t_span[0]) / 20
 
         t = torch.as_tensor(t_span[0], dtype=y0.dtype, device=y0.device).clone()
         y = y0.clone()
 
-        e = 0.001
+        final_t = t_span[1]
         # TODO
-        for t_i in range(Ts - 1):
+        h = dt
+        while t < final_t:
+            #ensure not to step past final time
+            h = min(h, final_t - t)
             #do RK 4 and 5 steps
-            h = dt
-            rk4, rk5 = rk45_step(fun, t_span, y, h)
-            error = np.abs(rk5 - rk4)
-            s = ((e * h) / (2 * error)) ** 5
-            h = s * h
+            rk4, rk5 = self.rk45_step(fun, t_span, y, h)
+            error = torch.max(torch.abs(rk4 - rk5))
             y += rk5
             t += h
+            #Need to limit the next step size to between (1/2 and 2)
+            nextStepSize = 0.9 * (self.tol / error) ** (1 / 5)
+            bestCase = min(2, nextStepSize)
+            h *= max(0.5, bestCase)
         return y
 
-    def rk45_step(self, fun: Callable, t_span: Tensor, y0: Tensor, dt):
+    def rk45_step(self, fun: Callable, t_span: Tensor, y0: Tensor, dt: Tensor):
         """Tableau for Dormand-Prince method used (see https://en.wikipedia.org/wiki/Dormand%E2%80%93Prince_method)"""
         t0 = t_span[0]
         # dt = t_span[1] - t_span[0]

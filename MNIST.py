@@ -22,7 +22,7 @@ test_set = datasets.MNIST('tmp/data/', download=True, train=False, transform=tra
 
 train_loader = torch.utils.data.DataLoader(train_set, batch_size=batch_size, shuffle=True)
 test_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuffle=False)
-small_data_set = False
+small_data_set = True
 
 if small_data_set:
     # To simply ensure implementation works, use small subset of data which is fast to train/test
@@ -42,6 +42,7 @@ criterion = nn.CrossEntropyLoss()
 
 
 # Initialize the model, loss function, and optimizer
+#model = MNISTClassifier(n_features=n_features, use_node=True, integrator=RKIntegrator(tol = 0.01)).to(device)
 model = MNISTClassifier(n_features=n_features, use_node=True, integrator=EulerIntegrator(n_steps=20)).to(device)
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
