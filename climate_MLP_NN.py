@@ -11,7 +11,7 @@ import os
 batch_size = 32
 seed = 42
 epochs = 50
-H = 3 #[hr], horizon
+H = 2 #[hr], horizon
 
 # =================== Build Dataset =================== 
 df = pd.read_csv('./practice3.csv') #preprocessed data
@@ -102,7 +102,7 @@ plt.plot(epochs_range, val_acc, label='Validation Accuracy')
 plt.legend(loc='lower right')
 plt.title(f'Training and Validation Accuracy, H={H}')
 
-plt.text(epochs_range[-1], min(val_acc), f'Test Accuracy: {test_accuracy:.2f}', ha='right', va='bottom') # Annotate test accuracy value on the plot
+plt.figtext(0.4, 0.05, f'Test Accuracy: {test_accuracy:.2f}', ha='center', fontsize=30)
 
 plt.subplot(1, 2, 2)
 plt.plot(epochs_range, loss, label='Training Loss')
