@@ -108,12 +108,12 @@ plt.subplot(1, 2, 2)
 plt.plot(epochs_range, loss, label='Training Loss')
 plt.plot(epochs_range, val_loss, label='Validation Loss')
 plt.legend(loc='upper right')
-plt.title(f'Training and Validation Loss w/gust, H={H}')
+plt.title(f'Training and Validation Loss, H={H}')
 
 if not os.path.exists("./plots"):
     os.makedirs("./plots")
     
-plt.savefig(f"./plots/loss__gust_H={H}.jpg")
+plt.savefig(f"./plots/loss_H={H}.jpg")
 
 plt.show()
 
