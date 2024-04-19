@@ -14,7 +14,7 @@ epochs = 50
 H = 3 #[hr], horizon
 
 # =================== Build Dataset =================== 
-df = pd.read_csv('./practice3.csv') #preprocessed data, recommend putting it in a gitignore directory to prevent git lfs issues
+df = pd.read_csv('./practice3.csv') #preprocessed data
 # Extract hour value and convert into a cyclic feature
 df['Hour'] = pd.to_datetime(df['Hour']).dt.hour
 df['Hour_sin'] = np.sin(2 * np.pi * df['Hour'] / 24.0)
@@ -39,6 +39,10 @@ labels_scaled = scaler_labels.fit_transform(labels)
 # Split the dataset
 X_train, X_test, y_train, y_test = train_test_split(features_scaled, labels_scaled, test_size=0.2, random_state=seed) #uncomment to visualize scaled dataset, use for training
 # X_train, X_test, y_train, y_test = train_test_split(features, labels, test_size=0.2, random_state=seed) #uncomment to visualize unscaled dataset, but do not use for training
+print("Shape of X_train:", X_train.shape)
+print("Shape of y_train:", y_train.shape)
+print("Shape of X_test:", X_test.shape)
+print("Shape of y_test:", y_test.shape)
 
 # Print first n rows of datasets (default n=5)
 print("X_train:")
