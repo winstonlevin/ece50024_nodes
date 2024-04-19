@@ -11,7 +11,7 @@ import os
 batch_size = 32
 seed = 42
 epochs = 50
-H = 2 #[hr], horizon
+H = 4 #[hr], horizon
 
 # =================== Build Dataset =================== 
 df = pd.read_csv('./practice3.csv') #preprocessed data
@@ -21,10 +21,10 @@ df['Hour_sin'] = np.sin(2 * np.pi * df['Hour'] / 24.0)
 df['Hour_cos'] = np.cos(2 * np.pi * df['Hour'] / 24.0)
 
 # Select features at time, say t
-features = df[['Hour_sin', 'Hour_cos', 'Precip_mm', 'Atm_pressure_mb', 'Global Radiation (Kj/m²)', 'Air_temp_C',  'Rel_Humidity_percent', 'Wind_dir_deg', 'Wind_Speed']]
+features = df[['Hour_sin', 'Hour_cos', 'Precip_mm', 'Atm_pressure_mb', 'Global Radiation (Kj/m²)', 'Air_temp_C',  'Rel_Humidity_percent', 'Wind_dir_deg', 'Gust']]
 
 # Target variables from time t+H shifted backwards by horizon of H hours (these are ground truth labels for weather states at t)
-labels = df[['Precip_mm', 'Atm_pressure_mb', 'Global Radiation (Kj/m²)', 'Air_temp_C', 'Rel_Humidity_percent', 'Wind_dir_deg', 'Wind_Speed']].shift(-1 * H)
+labels = df[['Precip_mm', 'Atm_pressure_mb', 'Global Radiation (Kj/m²)', 'Air_temp_C', 'Rel_Humidity_percent', 'Wind_dir_deg', 'Gust']].shift(-1 * H)
 
 # Drop rows with NaN values resulting from shifting (will essentially remove the last H rows)
 labels.dropna(inplace=True)
@@ -108,12 +108,12 @@ plt.subplot(1, 2, 2)
 plt.plot(epochs_range, loss, label='Training Loss')
 plt.plot(epochs_range, val_loss, label='Validation Loss')
 plt.legend(loc='upper right')
-plt.title(f'Training and Validation Loss, H={H}')
+plt.title(f'Training and Validation Loss w/gust, H={H}')
 
 if not os.path.exists("./plots"):
     os.makedirs("./plots")
     
-plt.savefig(f"./plots/loss_H={H}.jpg")
+plt.savefig(f"./plots/loss__gust_H={H}.jpg")
 
 plt.show()
 
