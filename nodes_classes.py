@@ -357,6 +357,44 @@ class MNISTClassifier(nn.Module):
         _state = self.output_layer(_state)  # Convert pool of features to classifications
         return _state
 
+class WeatherForecaster(nn.Module):
+    """
+    Forecaster for Weather Data. The input data is a set of weather data from a horizon t-H. The output data is a forecast
+    of weather for t+H. The NN architecture is:
+
+    (1) HIDDEN LAYER
+        Integration of Convolutional NODE for features (if use_node) or a conventional convolution layer
+    """
+    def __init__(self, n_features: int = 64, use_node=True, integrator: Optional[Callable] = None, H: int = 2):
+        if integrator is None:
+            integrator = EulerIntegrator()
+
+        super(MNISTClassifier, self).__init__()
+        self.n_features = n_features
+        self.use_node = use_node
+        self.H = H
+
+        if use_node:
+            self.hidden_layer = IntegratedNODE(Conv2dNODE(n_features), integrator=integrator)
+        else:
+            self.hidden_layer = nn.Sequential(
+                nn.Conv2d(n_features, n_features, kernel_size=3, padding=1),
+                nn.ReLU(inplace=True)
+            )
+
+        # Storage of training information
+        self.train_losses = []
+        self.test_accuracies = []
+
+    def forward(self, _state):
+        state_list = []
+        H = self.H
+        nextState  = _state
+        for t in range(H + 1):
+            nextState = self.hidden_layer(nextState)
+            state_list.append(nextState)
+        return state_list
+
 
 def train(model, train_loader, optimizer, criterion, device, verbose=True):
     """
