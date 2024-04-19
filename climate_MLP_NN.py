@@ -71,15 +71,18 @@ model.summary()
 model.compile(optimizer='adam', loss='mse', metrics=['accuracy'])
 history = model.fit(X_train, y_train, epochs=epochs, batch_size=batch_size, validation_split=0.2)
 
-# Evaluate the model
-model.evaluate(X_test, y_test)
+acc = history.history['accuracy']
+val_acc = history.history['val_accuracy']
+loss = history.history['loss']
+val_loss = history.history['val_loss']
+epochs_range = range(epochs)
 
 # =================== Test model =================== 
 predictions = model.predict(X_test)
 # Convert predictions back to original scale
 predictions_original = scaler_labels.inverse_transform(predictions)
 
-# Convert predictions and y_test to DataFrames and display
+# Convert predictions and y_test to DataFrames and visualize
 predictions_df = pd.DataFrame(predictions_original, columns=labels.columns)
 y_test_df = pd.DataFrame(y_test, columns=labels.columns)
 print("Predictions:")
@@ -87,25 +90,25 @@ print(predictions_df.head())
 print("\nActual Values (Labels):")
 print(y_test_df.head())
 
-# =================== Plot Loss and Accuracy =================== 
-acc = history.history['accuracy']
-val_acc = history.history['val_accuracy']
-loss = history.history['loss']
-val_loss = history.history['val_loss']
-epochs_range = range(epochs)
+# Evaluate the model on the test set
+test_loss, test_accuracy = model.evaluate(X_test, y_test)
+print("Test Accuracy:", test_accuracy)
 
+# =================== Plot Training/Validation Loss and Accuracy =================== 
 plt.figure(1, figsize=(8, 8))
 plt.subplot(1, 2, 1)
 plt.plot(epochs_range, acc, label='Training Accuracy')
 plt.plot(epochs_range, val_acc, label='Validation Accuracy')
 plt.legend(loc='lower right')
-plt.title('Training and Validation Accuracy')
+plt.title(f'Training and Validation Accuracy, H={H}')
+
+plt.text(epochs_range[-1], min(val_acc), f'Test Accuracy: {test_accuracy:.2f}', ha='right', va='bottom') # Annotate test accuracy value on the plot
 
 plt.subplot(1, 2, 2)
 plt.plot(epochs_range, loss, label='Training Loss')
 plt.plot(epochs_range, val_loss, label='Validation Loss')
 plt.legend(loc='upper right')
-plt.title('Training and Validation Loss')
+plt.title(f'Training and Validation Loss, H={H}')
 
 if not os.path.exists("./plots"):
     os.makedirs("./plots")
