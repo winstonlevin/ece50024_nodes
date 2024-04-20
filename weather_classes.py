@@ -14,7 +14,10 @@ from nodes_classes import EulerIntegrator, NODEGradientModule, IntegratedNODE
 # DATA HANDLING
 # ==================================================================================================================== #
 class WeatherDataSet(Dataset):
-    def __init__(self, csv_path, n_prior_states, n_future_estimates, row_start: int = 0, row_end: int = -1):
+    def __init__(
+            self, csv_path, n_prior_states, n_future_estimates, row_start: int = 0, row_end: int = -1, process_csv=True,
+            normalize: bool = True
+    ):
         """
         Create a data set to load sequences of input and target data
         :param csv_path: path to CSV file used
@@ -24,6 +27,7 @@ class WeatherDataSet(Dataset):
                               (size of output vector is n_states * n_future_estimates)
         :param row_start: Initial row of CSV to load (allows separation of training/validation data)
         :param row_end: Final row of CSV to load
+        :param normalize: Whether to normalize data
         """
         self.csv_path = csv_path
         self.row_start: int = row_start
@@ -37,16 +41,31 @@ class WeatherDataSet(Dataset):
 
         self.n_prior_states = n_prior_states
         self.n_future_estimates = n_future_estimates
+        self.normalize = normalize
 
-        self.time_state_df, self.seq_starts, self.seq_ends, self.too_high_start_index = self.process_csv()
-        self.n_states = self.time_state_df.shape[1] - 1
+        if process_csv:
+            self.time_state_df, self.seq_starts, self.seq_ends, self.too_high_start_index = self.process_csv()
+        else:
+            self.time_state_df, self.seq_starts, self.seq_ends, self.too_high_start_index = None, None, None, None
+
         self.target_index_offset = self.n_prior_states + 1
-        self.length_inputs = 1 + self.n_states * self.n_prior_states
-        self.length_targets = self.n_states * self.n_future_estimates
 
     def process_csv(self):
         df = pd.read_csv(self.csv_path, skiprows=self.row_start, nrows=1 + self.row_end - self.row_start)
-        df = df[:self.row_end]
+        df['Hour'] = pd.to_datetime(df['Hour']).dt.hour
+
+        # Derive states from df
+        time_state_df = df[['Hour', 'Precip_mm', 'Atm_pressure_mb', 'Global Radiation (Kj/m²)', 'Air_temp_C',
+                            'Rel_Humidity_percent', 'Wind_dir_deg', 'Gust']]
+        time_state_arr = np.asarray(time_state_df, dtype=float)
+        if self.normalize:
+            mean = np.mean(time_state_arr, axis=0, keepdims=True)
+            ranges = np.max(time_state_arr, axis=0, keepdims=True) - np.min(time_state_arr, axis=0, keepdims=True)
+            ranges[ranges < 1e-6] = 1e-6  # Ensure positive range
+            mean[0, 0] = 0.  # Do not normalize time
+            ranges[0, 0] = 1.
+            time_state_df = (time_state_df - mean) / ranges  # TODO - this should be btwn -1 and +1, but isn't :/
+
         time_difference = np.diff(df['Index'])
         seq_starts = np.insert(np.nonzero(time_difference > 1)[0] + 1, 0, 0)
         seq_ends = np.append(seq_starts[1:], len(time_difference))
@@ -57,10 +76,38 @@ class WeatherDataSet(Dataset):
         seq_ends = seq_ends[len_seq > too_low_length]
         too_high_start_index = seq_ends - too_low_length
 
-        time_state_df = df[['Hour', 'Precip_mm', 'Atm_pressure_mb', 'Global Radiation (Kj/m²)', 'Air_temp_C',
-                            'Rel_Humidity_percent', 'Wind_dir_deg', 'Gust']]
-
         return time_state_df, seq_starts, seq_ends, too_high_start_index
+
+    def truncated_data(self, start: int = 0, end: int = -1):
+        return self.seq_starts[start:end], self.seq_ends[start:end], self.too_high_start_index[start:end]
+
+    def split_data(self, frac_validation: float = 0., frac_test: float = 0.):
+        """Turn processed dataset into train/validation/test dataset (leftover used for train)"""
+        n_data = len(self)
+
+        n_data_validation = int(round(frac_validation * n_data))
+        n_data_test = int(round(frac_test * n_data))
+        n_data_train = n_data - n_data_validation - n_data_test
+
+        idces_start = (0, n_data_train, n_data_train + n_data_validation)
+        idces_end = (n_data_train, n_data_train + n_data_validation + n_data_test)
+
+        # Assign same data array to new datasets, but truncate to subset of start/end indices
+        datasets = []
+        for idx_start, idx_end in zip(idces_start, idces_end):
+            if idx_start == idx_end:
+                continue  # Null dataset
+
+            dataset = WeatherDataSet(
+                csv_path=self.csv_path, n_prior_states=self.n_prior_states, n_future_estimates=self.n_future_estimates,
+                row_start=self.row_start, row_end=self.row_end, process_csv=False
+            )
+            dataset.time_state_df = self.time_state_df
+            dataset.seq_starts, dataset.seq_ends, dataset.too_high_start_index = \
+                self.truncated_data(idx_start, idx_end)
+            datasets.append(dataset)
+
+        return datasets
 
     def __len__(self):
         return len(self.seq_starts)
@@ -75,6 +122,8 @@ class WeatherDataSet(Dataset):
 
         return input_time_states, output_states
 
+    def __repr__(self):
+        return f'WeatherDataSet()'
 
 # ==================================================================================================================== #
 # LOSS FUNCTION
