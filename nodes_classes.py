@@ -1,4 +1,3 @@
-import sys
 from abc import ABC, abstractmethod
 from typing import Optional, Callable
 
@@ -16,9 +15,9 @@ class EulerIntegrator:
         Solve IVP using Euler's method parameterized by the number of integration steps.
 
         :param fun: Dynamic function dy/dt = f(t, y)
-        :param t_span:
-        :param y0:
-        :return:
+        :param t_span: Tensor of initial and final time
+        :param y0: Initial state
+        :return: Final state
         """
         dt = (t_span[1] - t_span[0]) / float(self.n_steps)
         t = torch.as_tensor(t_span[0], dtype=y0.dtype, device=y0.device).clone()
@@ -37,38 +36,52 @@ solve_ivp_euler = EulerIntegrator(n_steps=5)
 
 
 class RKIntegrator:
-    def __init__(self, tol: float = 1e-3):
-        self.tol = tol
+    def __init__(self, tol: float = 1e-3, min_time_step: float = 1e-2):
+        self.tol: float = tol
+        self.min_time_step: float = min_time_step
 
     def solve_ivp(self, fun: Callable, t_span: Tensor, y0: Tensor):
         """
         Solve IVP using 4/5th order Runga-Kutta method with an adaptive step size parameterized by error tolerance.
 
         :param fun: Dynamic function dy/dt = f(t, y)
-        :param t_span:
-        :param y0:
-        :return:
+        :param t_span: Tensor of initial and final time
+        :param y0: Initial state
+        :return: Final state
         """
-        dt = (t_span[1] - t_span[0]) / float(self.n_steps)
         t = torch.as_tensor(t_span[0], dtype=y0.dtype, device=y0.device).clone()
+        tf = torch.as_tensor(t_span[-1], dtype=y0.dtype, device=y0.device).clone()
         y = y0.clone()
 
-        # TODO
-        for i_step in range(self.n_steps):
-            #y += dt * fun(t, y)
-            part1 = fun(t, y)
-            part2 = fun(t + (dt / 2), y + (dt * part1 / 2))
-            part3 = fun(t + (dt / 2), y + (dt * part2 / 2))
-            part4 = fun(t + (dt), y + (dt * part3))
-            y += y + ((dt / 6)*(part1 + (2 * part2) + (2 * part3) + (part4)))
+        # Try to space whole sequence in one step
+        h_abs = (tf - t).abs()
+        step_dir = torch.sign(tf - t)
+        h_min = torch.as_tensor(self.min_time_step, dtype=t.dtype, device=t.device)
 
-            t += dt
+        # Allow up to 10x increase in step size for suitable low error
+        min_step_divisor = torch.as_tensor(0.1 * self.tol, dtype=t.dtype, device=t.device)
+
+        while h_abs > 0:
+            dt = h_abs*step_dir
+            y4, y5 = self.rk45_step(fun=fun, t0=t, dt=dt, y0=y)
+            error = (y5 - y4).abs().max()
+
+            # Adjust step size based on error estimate
+            h_abs *= self.tol / error.maximum(min_step_divisor)
+            torch.maximum(h_abs, h_min, out=h_abs)  # Inplace enforcement of min time step
+
+            if error <= self.tol or h_abs == h_min:
+                # Error within tolerance -> accept step
+                t += dt
+                y = y5
+
+            torch.minimum(h_abs, (tf - t).abs(), out=h_abs)  # Inplace adjustment for final time
+
         return y
 
-    def rk45_step(self, fun: Callable, t_span: Tensor, y0: Tensor):
+    @staticmethod
+    def rk45_step(fun: Callable, t0: Tensor, dt: Tensor, y0: Tensor):
         """Tableau for Dormand-Prince method used (see https://en.wikipedia.org/wiki/Dormand%E2%80%93Prince_method)"""
-        t0 = t_span[0]
-        dt = t_span[1] - t_span[0]
         k1 = fun(t0, y0)
         k2 = fun(t0 + 0.2*dt, y0 + 0.2*k1*dt)
         k3 = fun(t0 + 0.3*dt, y0 + (0.075*k1 + 0.225*k2) * dt)
