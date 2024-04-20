@@ -1,16 +1,31 @@
 import torch
+from torch.utils.data import DataLoader
 import pandas as pd
 import matplotlib.pyplot as plt
 import os
 
-from weather_classes import WeatherDataSet, WeatherPredictor, create_matrix_from_weights, weather_weighted_loss_function
-from nodes_classes import EulerIntegrator
+from weather_classes import WeatherDataSet, WeatherPredictor, create_matrix_from_weights, \
+    weather_weighted_loss_function, train, test
+from nodes_classes import RKIntegrator
 
 # =================== Define Hyperparameters =================== 
 batch_size = 64
 max_epochs = 50
+max_epochs_without_improvement = 50
 n_prior_states = 1  # Number of prior states used
 n_future_estimates = 4  # Number of future predictions [hr]
+
+# States are: precipitation, pressure, radiation, temperature, relative humidity, wind direction, and wind speed
+weight_high = 1.
+weight_medium = 1e-1
+weight_low = 1e-3
+weights = torch.tensor((weight_medium, weight_medium, weight_low, weight_high, weight_medium, weight_low, weight_low))
+
+discount_factor = 0.9
+
+learning_rate = 1e-3
+
+use_node = False
 
 # =================== Build Dataset ===================
 data_csv_path = './practice3.csv'
@@ -20,8 +35,46 @@ dataset_all = WeatherDataSet(
 
 # Split into 10% Validation / 90% Train
 dataset_train, dataset_validation = dataset_all.split_data(frac_validation=0.1)
+n_states = dataset_train.time_state_df.shape[1] - 1
+
+train_loader = torch.utils.data.DataLoader(dataset_train, batch_size=batch_size, shuffle=True)
+validation_loader = torch.utils.data.DataLoader(dataset_validation, batch_size=batch_size, shuffle=False)
+
+# =================== Compile and train model ===================
+# Device configuration
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+prediction_weights = create_matrix_from_weights(
+    weights, num_future_predictions=n_future_estimates, discount_for_future=discount_factor, return_matrix=False
+)
 
 
+def criterion(_output, _target):
+    return weather_weighted_loss_function(_output, _target, prediction_weights, reduction='mean')
+
+
+model = WeatherPredictor(
+    n_states=n_states, n_prior_states=n_prior_states, n_predictions=n_future_estimates, n_layers=3,
+    activation_type='SiLU', use_node=use_node, integrator=RKIntegrator(min_time_step=1./20.)
+).to(device)
+model.weights = prediction_weights
+
+optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+
+epochs_without_improvement = 0
+test_loss_prev = torch.inf
+for epoch in range(max_epochs):
+    train_loss = train(model, train_loader, optimizer, criterion, device, verbose=True)
+    model.train_losses.append(train_loss)
+    test_loss = test(model, validation_loader, criterion, device)
+    model.test_losses.append(test_loss)
+
+    print(f"Epoch {epoch + 1}/{max_epochs}, Train Loss: {train_loss}, Validation Loss: {test_loss}")
+    epochs_without_improvement += test_loss > test_loss_prev
+    if epochs_without_improvement > max_epochs_without_improvement:
+        print('Overtraining detected! Ending training.')
+        break
+    test_loss_prev = test_loss
 
 # df = pd.read_csv('./practice3.csv')  # preprocessed data
 # # Extract hour value and convert into a cyclic feature

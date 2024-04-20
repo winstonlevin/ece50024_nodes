@@ -43,6 +43,8 @@ class WeatherDataSet(Dataset):
         self.n_future_estimates = n_future_estimates
         self.normalize = normalize
 
+        self.n_states_to_return = self.n_prior_states + self.n_future_estimates + 1
+
         if process_csv:
             self.time_state_df, self.seq_starts, self.seq_ends, self.too_high_start_index = self.process_csv()
         else:
@@ -71,7 +73,7 @@ class WeatherDataSet(Dataset):
         seq_ends = np.append(seq_starts[1:], len(time_difference))
 
         len_seq = seq_ends - seq_starts
-        too_low_length = self.n_prior_states + self.n_future_estimates
+        too_low_length = self.n_states_to_return - 1
         seq_starts = seq_starts[len_seq > too_low_length]
         seq_ends = seq_ends[len_seq > too_low_length]
         too_high_start_index = seq_ends - too_low_length
@@ -113,8 +115,8 @@ class WeatherDataSet(Dataset):
         return len(self.seq_starts)
 
     def __getitem__(self, index):
-        initial_index = np.random.randint(0, self.too_high_start_index[index])
-        df = self.time_state_df[self.seq_starts[index] + initial_index:self.seq_ends[index]]
+        initial_index = np.random.randint(self.seq_starts[index], self.too_high_start_index[index])
+        df = self.time_state_df[initial_index:initial_index + self.n_states_to_return]
         data_tensor = torch.as_tensor(np.asarray(df, dtype=float).T)
 
         input_time_states = data_tensor[:, :self.target_index_offset]
@@ -191,7 +193,9 @@ def create_matrix_from_weights(
 # ==================================================================================================================== #
 # Neural Network Modules
 # ==================================================================================================================== #
-def generate_dense_layers(in_features: int, out_features: int, n_layers: int = 1, activation_type: str = 'ReLU'):
+def generate_dense_layers(
+        in_features: int, out_features: int, n_layers: int = 1, activation_type: str = 'ReLU', dtype=float
+):
     # Choose activation function based on type
     if activation_type.lower() == 'relu':
         def gen_activation_fn():
@@ -199,7 +203,7 @@ def generate_dense_layers(in_features: int, out_features: int, n_layers: int = 1
     elif activation_type.lower() == 'elu':
         def gen_activation_fn():
             return nn.ELU(inplace=True)
-    elif activation_type.lower == 'silu':
+    elif activation_type.lower() == 'silu':
         def gen_activation_fn():
             return nn.SiLU(inplace=True)
     elif "leaky" in activation_type.lower():
@@ -213,9 +217,10 @@ def generate_dense_layers(in_features: int, out_features: int, n_layers: int = 1
     layer = nn.Sequential()
 
     # Create the layers
-    for _ in range(n_layers):
+    for idx_layer in range(1, n_layers + 1, 1):
+        _out_features = out_features if idx_layer == n_layers else in_features
         layer.append(nn.Sequential(
-            nn.Linear(in_features, out_features),
+            nn.Linear(in_features, _out_features, dtype=dtype),
             gen_activation_fn()
         ))
 
@@ -232,7 +237,7 @@ class WeatherNODE(NODEGradientModule):
         super(WeatherNODE, self).__init__()
 
         self.n_features: int = n_features
-        self.day_frequency = day_frequency
+        self.day_frequency: float = day_frequency
         self.n_layers: int = n_layers
         self.activation_type: str = activation_type
 
@@ -312,7 +317,8 @@ class WeatherPredictor(nn.Module):
 
         if use_node:
             self.integration_layer = IntegratedNODE(
-                WeatherNODE(n_features=self.n_features, n_layers=self.n_layers, activation_type=self.activation_type),
+                WeatherNODE(n_features=self.n_features, n_layers=self.n_layers, activation_type=self.activation_type,
+                            day_frequency=self.day_frequency),
                 integrator=integrator
             )
             self.unpack_inputs = self.unpack_node_inputs
@@ -327,7 +333,8 @@ class WeatherPredictor(nn.Module):
 
         # Storage of training information
         self.train_losses = []
-        self.test_accuracies = []
+        self.test_losses = []
+        self.weights = []
 
     def unpack_node_inputs(self, _inputs: Tensor):
         """
@@ -355,14 +362,14 @@ class WeatherPredictor(nn.Module):
         :param _inputs: Tensor, inputs of dimension ([num_batches, ]1 + num_states, 1 + num_previous_states).
         :return: _features: Tensor, features of dimension ([num_batches, ]2 + num_states*(1 + num_previous_states),)
         """
-        _transformed_state = torch.cat((_inputs[..., 0, :], _inputs), dim=-2)
+        _t0 = _inputs[..., 0:1, 0]
 
         # Time is broken into a cosine and sine wave with a period of 1 day, so there are 2 "time" inputs in addition
         # to the number of features in/out.
-        _transformed_state[..., 0, :] = torch.cos(self.day_frequency * _transformed_state[..., 0, :])
-        _transformed_state[..., 1, :] = torch.sin(self.day_frequency * _transformed_state[..., 1, :])
-
-        return _transformed_state.flatten(start_dim=-2)
+        return torch.cat((
+            torch.cos(self.day_frequency * _t0), torch.sin(self.day_frequency * _t0),
+            _inputs[..., 1:, :].flatten(start_dim=-2)
+        ), dim=-1)
 
     def unpack_node_outputs(self, _time, _output):
         """
@@ -398,11 +405,13 @@ class WeatherPredictor(nn.Module):
         _in_features = self.unpack_inputs(_inputs)
 
         # Integrate to get predictions
-        _predicted_states = torch.empty(size=(*_inputs.shape[:-1], self.n_predictions))
-        for idx_predict in range(0, self.n_predictions*self.n_states, self.n_states):
+        _prediction_shape = list(_inputs.shape[:-1])
+        _prediction_shape[-1] -= 1  # Remove time from prediction
+        _predicted_states = torch.empty(size=(*_prediction_shape, self.n_predictions))
+        for idx_predict in range(self.n_predictions):
             _output = self.integration_layer(_in_features)  # Integrate the state
             _time += 1.  # Advance 1 hour
-            _predicted_states[idx_predict:idx_predict+self.n_states], _in_features = self.unpack_outputs(_time, _output)
+            _predicted_states[..., :, idx_predict], _in_features = self.unpack_outputs(_time, _output)
         return _predicted_states
 
 
@@ -424,7 +433,7 @@ def train(model, train_loader, optimizer, criterion, device, verbose=True):
         inputs, labels = inputs.to(device), labels.to(device)
         optimizer.zero_grad()
         outputs = model(inputs)
-        loss = criterion(outputs, labels)
+        loss = criterion(outputs.flatten(start_dim=-2), labels.flatten(start_dim=-2))
         loss.backward()
         optimizer.step()
         running_loss += loss.item()
@@ -444,5 +453,5 @@ def test(model, test_loader, criterion, device):
         for inputs, targets in test_loader:
             inputs, targets = inputs.to(device), targets.to(device)
             outputs = model(inputs)
-            total_loss += criterion(outputs, targets).item()
+            total_loss += criterion(outputs.flatten(start_dim=-2), targets.flatten(start_dim=-2)).item()
     return total_loss / n_batches
