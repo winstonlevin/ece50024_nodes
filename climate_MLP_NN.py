@@ -30,14 +30,17 @@ learning_rate = 1e-3
 use_node = True
 
 # =================== Build Dataset ===================
-data_csv_path = './practice3.csv'
+data_csv_path = './tmp/data/Weather/north_processed.csv'
+preprocess_path = './tmp/data/WeatherDataset/time_state.csv'  # Path to save Numpy Array of normalized state
+
 dataset_all = WeatherDataSet(
-    data_csv_path, n_prior_states=n_prior_states, n_future_estimates=n_future_estimates, normalize=True
+    csv_path=data_csv_path, preprocess_path=preprocess_path,
+    n_prior_states=n_prior_states, n_future_estimates=n_future_estimates, normalize=True
 )
 
 # Split into 10% Validation / 90% Train
 dataset_train, dataset_validation = dataset_all.split_data(frac_validation=0.1)
-n_states = dataset_train.time_state_df.shape[1] - 1
+n_states = dataset_train.n_states
 
 train_loader = torch.utils.data.DataLoader(dataset_train, batch_size=batch_size, shuffle=True)
 validation_loader = torch.utils.data.DataLoader(dataset_validation, batch_size=batch_size, shuffle=False)

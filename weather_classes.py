@@ -1,4 +1,5 @@
-from typing import Optional, Callable
+import os
+from typing import Optional, Callable, Sequence
 
 import torch
 from torch import nn
@@ -15,12 +16,13 @@ from nodes_classes import EulerIntegrator, NODEGradientModule, IntegratedNODE
 # ==================================================================================================================== #
 class WeatherDataSet(Dataset):
     def __init__(
-            self, csv_path, n_prior_states, n_future_estimates, row_start: int = 0, row_end: int = -1, process_csv=True,
-            normalize: bool = True
+            self, csv_path, preprocess_path, n_prior_states, n_future_estimates, row_start: int = 0,
+            row_end: int = -1, process_csv=True, normalize: bool = True, columns_to_use: Optional[Sequence] = None
     ):
         """
         Create a data set to load sequences of input and target data
         :param csv_path: path to CSV file used
+        :param preprocess_path: path to save preprocessed array
         :param n_prior_states: Number of derivatives/prior states used in the estimate
                               (size of input vector is 1 + n_states * (n_prior_states + 1))
         :param n_future_estimates: Number of future states to estimate, separated by 1 hour intervals
@@ -28,8 +30,10 @@ class WeatherDataSet(Dataset):
         :param row_start: Initial row of CSV to load (allows separation of training/validation data)
         :param row_end: Final row of CSV to load
         :param normalize: Whether to normalize data
+        :param columns_to_use: Optional[Sequence], which columns of csv to use as time/state.
         """
         self.csv_path = csv_path
+        self.preprocess_path = preprocess_path
         self.row_start: int = row_start
 
         if row_end < 0:
@@ -43,30 +47,39 @@ class WeatherDataSet(Dataset):
         self.n_future_estimates = n_future_estimates
         self.normalize = normalize
 
+        if columns_to_use is not None:
+            self.columns_to_use = columns_to_use
+        else:
+            self.columns_to_use = [
+                'Hour', 'Precip_mm', 'Atm_pressure_mb', 'Global Radiation (Kj/m²)', 'Air_temp_C',
+                'Rel_Humidity_percent', 'Wind_dir_deg', 'Gust'
+            ]
+
+        self.n_states = len(self.columns_to_use) - 1  # Assume one column is time
         self.n_states_to_return = self.n_prior_states + self.n_future_estimates + 1
 
         if process_csv:
-            self.time_state_df, self.seq_starts, self.seq_ends, self.too_high_start_index = self.process_csv()
+            self.seq_starts, self.seq_ends, self.too_high_start_index = self.process_csv()
         else:
-            self.time_state_df, self.seq_starts, self.seq_ends, self.too_high_start_index = None, None, None, None
+            self.seq_starts, self.seq_ends, self.too_high_start_index = None, None, None
 
         self.target_index_offset = self.n_prior_states + 1
 
     def process_csv(self):
         df = pd.read_csv(self.csv_path, skiprows=self.row_start, nrows=1 + self.row_end - self.row_start)
-        df['Hour'] = pd.to_datetime(df['Hour']).dt.hour
 
         # Derive states from df
-        time_state_df = df[['Hour', 'Precip_mm', 'Atm_pressure_mb', 'Global Radiation (Kj/m²)', 'Air_temp_C',
-                            'Rel_Humidity_percent', 'Wind_dir_deg', 'Gust']]
-        time_state_arr = np.asarray(time_state_df, dtype=float)
+        time_state_arr = np.asarray(df[self.columns_to_use], dtype=float)
+
         if self.normalize:
-            mean = np.mean(time_state_arr, axis=0, keepdims=True)
-            ranges = np.max(time_state_arr, axis=0, keepdims=True) - np.min(time_state_arr, axis=0, keepdims=True)
-            ranges[ranges < 1e-6] = 1e-6  # Ensure positive range
-            mean[0, 0] = 0.  # Do not normalize time
-            ranges[0, 0] = 1.
-            time_state_df = (time_state_df - mean) / ranges  # TODO - this should be btwn -1 and +1, but isn't :/
+            x_max = np.max(time_state_arr, axis=0, keepdims=True)
+            x_min = np.min(time_state_arr, axis=0, keepdims=True)
+            half_range = 0.5 * (x_max - x_min)
+            midpoint = 0.5 * (x_max + x_min)
+            half_range[0, 0] = 1.  # Do not transform time
+            midpoint[0, 0] = 0.
+            time_state_arr -= midpoint  # Put midpoint at 0
+            time_state_arr /= half_range  # Transform range to [-1, +1]
 
         time_difference = np.diff(df['Index'])
         seq_starts = np.insert(np.nonzero(time_difference > 1)[0] + 1, 0, 0)
@@ -78,7 +91,11 @@ class WeatherDataSet(Dataset):
         seq_ends = seq_ends[len_seq > too_low_length]
         too_high_start_index = seq_ends - too_low_length
 
-        return time_state_df, seq_starts, seq_ends, too_high_start_index
+        # Save pre-processed time/state array
+        os.makedirs(os.path.dirname(self.preprocess_path), exist_ok=True)  # Make directory if it does not yet exist
+        np.savetxt(self.preprocess_path, time_state_arr, delimiter=',')
+
+        return seq_starts, seq_ends, too_high_start_index
 
     def truncated_data(self, start: int = 0, end: int = -1):
         return self.seq_starts[start:end], self.seq_ends[start:end], self.too_high_start_index[start:end]
@@ -101,10 +118,10 @@ class WeatherDataSet(Dataset):
                 continue  # Null dataset
 
             dataset = WeatherDataSet(
-                csv_path=self.csv_path, n_prior_states=self.n_prior_states, n_future_estimates=self.n_future_estimates,
-                row_start=self.row_start, row_end=self.row_end, process_csv=False
+                csv_path=self.csv_path, preprocess_path=self.preprocess_path,
+                n_prior_states=self.n_prior_states, n_future_estimates=self.n_future_estimates,
+                row_start=self.row_start, row_end=self.row_end, process_csv=False, columns_to_use=self.columns_to_use
             )
-            dataset.time_state_df = self.time_state_df
             dataset.seq_starts, dataset.seq_ends, dataset.too_high_start_index = \
                 self.truncated_data(idx_start, idx_end)
             datasets.append(dataset)
@@ -115,13 +132,15 @@ class WeatherDataSet(Dataset):
         return len(self.seq_starts)
 
     def __getitem__(self, index):
+        # Choose random subsequence of the given sequence
         initial_index = np.random.randint(self.seq_starts[index], self.too_high_start_index[index])
-        df = self.time_state_df[initial_index:initial_index + self.n_states_to_return]
-        data_tensor = torch.as_tensor(np.asarray(df, dtype=float).T)
 
+        # Parse states
+        data_tensor = torch.as_tensor(np.loadtxt(
+            self.preprocess_path, dtype=float, delimiter=',', skiprows=initial_index, max_rows=self.n_states_to_return
+        )).T
         input_time_states = data_tensor[:, :self.target_index_offset]
         output_states = data_tensor[1:, self.target_index_offset:]
-
         return input_time_states, output_states
 
     def __repr__(self):
