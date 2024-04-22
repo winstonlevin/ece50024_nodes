@@ -125,7 +125,8 @@ class WeatherDataSet(Dataset):
         return input_time_states, output_states
 
     def __repr__(self):
-        return f'WeatherDataSet()'
+        return f'WeatherDataSet(len = {len(self)} | {self.n_prior_states + 1} input / {self.n_future_estimates} output)'
+
 
 # ==================================================================================================================== #
 # LOSS FUNCTION
@@ -233,57 +234,35 @@ class WeatherNODE(NODEGradientModule):
     (1) Dense Layer
     (2) Activation (default is ReLU)
     """
-    def __init__(self, n_features: int, day_frequency: float, n_layers: int = 1, activation_type: str = 'ReLU'):
+    def __init__(self, n_features: int, n_layers: int = 1, activation_type: str = 'ReLU'):
         super(WeatherNODE, self).__init__()
 
         self.n_features: int = n_features
-        self.day_frequency: float = day_frequency
         self.n_layers: int = n_layers
         self.activation_type: str = activation_type
 
-        # Choose activation function based on type
-        if self.activation_type.lower() == 'relu':
-            def gen_activation_fn():
-                return nn.ReLU(inplace=True)
-        elif self.activation_type.lower() == 'elu':
-            def gen_activation_fn():
-                return nn.ELU(inplace=True)
-        elif self.activation_type.lower == 'silu':
-            def gen_activation_fn():
-                return nn.SiLU(inplace=True)
-        elif "leaky" in self.activation_type.lower():
-            def gen_activation_fn():
-                return nn.LeakyReLU(inplace=True)
-        else:
-            raise NotImplementedError(f'Activation type "{self.activation_type}" is not implemented!')
-
-        # Time is broken into a cosine and sine wave with a period of 1 day, so there are 2 "time" inputs in addition
-        # to the number of features in/out
+        # dx/dt = f(t, x), where t is integration time and x is the feature vector
         self.dynamic_layer = generate_dense_layers(
-            in_features=2+self.n_features, out_features=self.n_features, n_layers=self.n_layers,
+            in_features=1 + self.n_features, out_features=self.n_features, n_layers=self.n_layers,
             activation_type=self.activation_type
         )
 
-    def cat_state_with_time(self, time: Tensor, state: Tensor):
+    @staticmethod
+    def cat_state_with_time(time: Tensor, state: Tensor):
         """
-        Returns a concatenation [x; t]
+        Returns a concatenation [t; x]
         """
-        batch_size, _, width, height = state.shape
-        time_expanded = time.expand(batch_size, 1, width, height)
+        return torch.cat((time.expand(size=state[..., 0:1].shape), state), dim=-1)
 
-        return torch.cat((
-            torch.cos(self.day_frequency * time_expanded), torch.sin(self.day_frequency * time_expanded), state
-        ), dim=1)
-
-    def forward(self, time, state):
+    def forward(self, integration_time, trig_time_and_state):
         """
         Dynamics function of the NODE dx/dt = f(t, x)
 
-        :param time:
-        :param state:
+        :param integration_time: Integration time (unused), independent of true time for each element of batch
+        :param trig_time_and_state: Concatenation of cos(time), sin(time), and state for (possibly) batched input
         :return:
         """
-        dxdt = self.dynamic_layer(self.cat_state_with_time(time, state))
+        dxdt = self.dynamic_layer(self.cat_state_with_time(integration_time, trig_time_and_state))
         return dxdt
 
 
@@ -317,8 +296,8 @@ class WeatherPredictor(nn.Module):
 
         if use_node:
             self.integration_layer = IntegratedNODE(
-                WeatherNODE(n_features=self.n_features, n_layers=self.n_layers, activation_type=self.activation_type,
-                            day_frequency=self.day_frequency),
+                WeatherNODE(n_features=2 + self.n_features, n_layers=self.n_layers,
+                            activation_type=self.activation_type),
                 integrator=integrator
             )
             self.unpack_inputs = self.unpack_node_inputs
@@ -343,18 +322,23 @@ class WeatherPredictor(nn.Module):
                         For the NODE, the prior states are converted into derivatives.
         :return _features: Tensor, features of dimension ([num_batches, ]1 + num_states*(1 + num_previous_states),)
         """
-        _transformed_state = torch.empty_like(_inputs, device=_inputs.device)
-        _transformed_state[..., :, 0:self.n_states+1] = _inputs[..., :, 0:self.n_states+1]  # Assign time/state
+        _t0 = _inputs[..., 0:1, 0]
+
+        _transformed_state = torch.empty_like(_inputs, device=_inputs.device)[..., 1:, :]
+        _transformed_state[..., :, 0] = _inputs[..., 1:, 0]  # Assign state
 
         # Assign derivatives of state
         _diff_time_state = _inputs
         for _idx_assign in range(1, self.n_prior_states*self.n_states, self.n_states):
             _diff_time_state = _diff_time_state.diff(dim=-1)
-            _transformed_state[..., :, 1+_idx_assign:_idx_assign+self.n_states] = \
-                _diff_time_state[..., 1:-0, :] / _diff_time_state[..., 0:1, :]
+            _transformed_state[..., :, _idx_assign] = \
+                _diff_time_state[..., 1:, 0] / _diff_time_state[..., 0:1, 0]
 
         # Flatten and return
-        return _transformed_state.flatten(start_dim=-2)
+        return torch.cat((
+            torch.cos(self.day_frequency * _t0), torch.sin(self.day_frequency * _t0),
+            _transformed_state.flatten(start_dim=-2)
+        ), dim=-1)
 
     def unpack_discrete_inputs(self, _inputs: Tensor):
         """
@@ -378,9 +362,9 @@ class WeatherPredictor(nn.Module):
         :param _output: Output of integration (i.e. state with derivatives at _time)
         :return: tuple, output prediction and input into Integrator for next timestep
         """
-        return _output[..., :self.n_states], torch.cat((
-            _time.view((-1, *torch.ones(size=(_output.ndim-1,), dtype=torch.int))), _output
-        ))
+        _output[..., 0] = torch.cos(self.day_frequency * _time)  # Advance to new time
+        _output[..., 1] = torch.sin(self.day_frequency * _time)
+        return _output[..., 2:2+self.n_states], _output  # Return state prediction and output vector
 
     def unpack_discrete_outputs(self, _time, _output):
         """

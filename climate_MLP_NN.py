@@ -25,7 +25,7 @@ discount_factor = 0.9
 
 learning_rate = 1e-3
 
-use_node = False
+use_node = True
 
 # =================== Build Dataset ===================
 data_csv_path = './practice3.csv'
