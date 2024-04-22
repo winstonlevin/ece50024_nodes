@@ -17,7 +17,8 @@ from nodes_classes import EulerIntegrator, NODEGradientModule, IntegratedNODE
 class WeatherDataSet(Dataset):
     def __init__(
             self, csv_path, preprocess_path, n_prior_states, n_future_estimates, row_start: int = 0,
-            row_end: int = -1, process_csv=True, normalize: bool = True, columns_to_use: Optional[Sequence] = None
+            row_end: int = -1, process_csv=True, normalize: bool = True, columns_to_use: Optional[Sequence] = None,
+            dtype=float
     ):
         """
         Create a data set to load sequences of input and target data
@@ -31,6 +32,7 @@ class WeatherDataSet(Dataset):
         :param row_end: Final row of CSV to load
         :param normalize: Whether to normalize data
         :param columns_to_use: Optional[Sequence], which columns of csv to use as time/state.
+        :param dtype: data type for output
         """
         self.csv_path = csv_path
         self.preprocess_path = preprocess_path
@@ -55,13 +57,15 @@ class WeatherDataSet(Dataset):
                 'Rel_Humidity_percent', 'Wind_dir_deg', 'Gust'
             ]
 
+        self.dtype = dtype
+
         self.n_states = len(self.columns_to_use) - 1  # Assume one column is time
         self.n_states_to_return = self.n_prior_states + self.n_future_estimates + 1
 
         if process_csv:
-            self.seq_starts, self.seq_ends, self.too_high_start_index = self.process_csv()
+            self.seq_starts, self.seq_ends, self.too_high_start_index, self.time_state_tensor = self.process_csv()
         else:
-            self.seq_starts, self.seq_ends, self.too_high_start_index = None, None, None
+            self.seq_starts, self.seq_ends, self.too_high_start_index, self.time_state_tensor = None, None, None, None
 
         self.target_index_offset = self.n_prior_states + 1
 
@@ -69,7 +73,7 @@ class WeatherDataSet(Dataset):
         df = pd.read_csv(self.csv_path, skiprows=self.row_start, nrows=1 + self.row_end - self.row_start)
 
         # Derive states from df
-        time_state_arr = np.asarray(df[self.columns_to_use], dtype=float)
+        time_state_arr = df[self.columns_to_use].values
 
         if self.normalize:
             x_max = np.max(time_state_arr, axis=0, keepdims=True)
@@ -93,9 +97,10 @@ class WeatherDataSet(Dataset):
 
         # Save pre-processed time/state array
         os.makedirs(os.path.dirname(self.preprocess_path), exist_ok=True)  # Make directory if it does not yet exist
-        np.savetxt(self.preprocess_path, time_state_arr, delimiter=',')
+        pd.DataFrame(time_state_arr).to_csv(self.preprocess_path)
+        # np.savetxt(self.preprocess_path, time_state_arr, delimiter=',')
 
-        return seq_starts, seq_ends, too_high_start_index
+        return seq_starts, seq_ends, too_high_start_index, torch.as_tensor(time_state_arr, dtype=self.dtype).T
 
     def truncated_data(self, start: int = 0, end: int = -1):
         return self.seq_starts[start:end], self.seq_ends[start:end], self.too_high_start_index[start:end]
@@ -124,6 +129,7 @@ class WeatherDataSet(Dataset):
             )
             dataset.seq_starts, dataset.seq_ends, dataset.too_high_start_index = \
                 self.truncated_data(idx_start, idx_end)
+            dataset.time_state_tensor = self.time_state_tensor
             datasets.append(dataset)
 
         return datasets
@@ -136,9 +142,10 @@ class WeatherDataSet(Dataset):
         initial_index = np.random.randint(self.seq_starts[index], self.too_high_start_index[index])
 
         # Parse states
-        data_tensor = torch.as_tensor(np.loadtxt(
-            self.preprocess_path, dtype=float, delimiter=',', skiprows=initial_index, max_rows=self.n_states_to_return
-        )).T
+        data_tensor = self.time_state_tensor[:, initial_index:initial_index + self.n_states_to_return]
+        # data_tensor = torch.as_tensor(pd.read_csv(
+        #     self.preprocess_path, skiprows=initial_index, nrows=self.n_states_to_return
+        # ).values).T
         input_time_states = data_tensor[:, :self.target_index_offset]
         output_states = data_tensor[1:, self.target_index_offset:]
         return input_time_states, output_states
@@ -253,7 +260,7 @@ class WeatherNODE(NODEGradientModule):
     (1) Dense Layer
     (2) Activation (default is ReLU)
     """
-    def __init__(self, n_features: int, n_layers: int = 1, activation_type: str = 'ReLU'):
+    def __init__(self, n_features: int, n_layers: int = 1, activation_type: str = 'ReLU', dtype=float):
         super(WeatherNODE, self).__init__()
 
         self.n_features: int = n_features
@@ -263,7 +270,7 @@ class WeatherNODE(NODEGradientModule):
         # dx/dt = f(t, x), where t is integration time and x is the feature vector
         self.dynamic_layer = generate_dense_layers(
             in_features=1 + self.n_features, out_features=self.n_features, n_layers=self.n_layers,
-            activation_type=self.activation_type
+            activation_type=self.activation_type, dtype=dtype
         )
 
     @staticmethod
@@ -293,7 +300,7 @@ class WeatherPredictor(nn.Module):
     def __init__(
             self, n_states: int, n_prior_states: int, n_predictions: int,
             n_layers: int, activation_type: str = 'ReLU',
-            use_node=True, integrator: Optional[Callable] = None
+            use_node=True, integrator: Optional[Callable] = None, dtype = float
     ):
         super(WeatherPredictor, self).__init__()
 
@@ -316,7 +323,7 @@ class WeatherPredictor(nn.Module):
         if use_node:
             self.integration_layer = IntegratedNODE(
                 WeatherNODE(n_features=2 + self.n_features, n_layers=self.n_layers,
-                            activation_type=self.activation_type),
+                            activation_type=self.activation_type, dtype=dtype),
                 integrator=integrator
             )
             self.unpack_inputs = self.unpack_node_inputs
@@ -324,7 +331,7 @@ class WeatherPredictor(nn.Module):
         else:
             self.integration_layer = generate_dense_layers(
                 in_features=2 + self.n_features, out_features=self.n_features, n_layers=self.n_layers,
-                activation_type=self.activation_type
+                activation_type=self.activation_type, dtype=dtype
             )
             self.unpack_inputs = self.unpack_discrete_inputs
             self.unpack_outputs = self.unpack_discrete_outputs

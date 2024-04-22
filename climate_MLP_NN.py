@@ -13,7 +13,7 @@ from nodes_classes import RKIntegrator
 # =================== Define Hyperparameters =================== 
 batch_size = 64
 max_epochs = 50
-max_epochs_without_improvement = 50
+max_epochs_without_improvement = 4
 n_prior_states = 1  # Number of prior states used
 n_future_estimates = 4  # Number of future predictions [hr]
 
@@ -27,7 +27,7 @@ discount_factor = 0.9
 
 learning_rate = 1e-3
 
-use_node = True
+use_node = False
 
 # =================== Build Dataset ===================
 data_csv_path = './tmp/data/Weather/north_processed.csv'
@@ -35,7 +35,7 @@ preprocess_path = './tmp/data/WeatherDataset/time_state.csv'  # Path to save Num
 
 dataset_all = WeatherDataSet(
     csv_path=data_csv_path, preprocess_path=preprocess_path,
-    n_prior_states=n_prior_states, n_future_estimates=n_future_estimates, normalize=True
+    n_prior_states=n_prior_states, n_future_estimates=n_future_estimates, normalize=True, dtype=torch.float32
 )
 
 # Split into 10% Validation / 90% Train
@@ -60,7 +60,7 @@ def criterion(_output, _target):
 
 model = WeatherPredictor(
     n_states=n_states, n_prior_states=n_prior_states, n_predictions=n_future_estimates, n_layers=3,
-    activation_type='SiLU', use_node=use_node, integrator=RKIntegrator(min_time_step=1./20.)
+    activation_type='SiLU', use_node=use_node, integrator=RKIntegrator(min_time_step=1./20.), dtype=torch.float32
 ).to(device)
 model.weights = prediction_weights
 
