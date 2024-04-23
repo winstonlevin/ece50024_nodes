@@ -438,24 +438,25 @@ def train(model, train_loader, optimizer, criterion, device, verbose=True):
     """
     model.train()  # Change model to training mode
 
-    running_loss = 0.0
+    mean_loss = 0.0
     n_batches = len(train_loader)
     idx_report = max(1, int(n_batches / 5))
     if verbose:
         print(f'\n')
 
-    for idx, (inputs, labels) in enumerate(train_loader):
+    for idx, (inputs, labels) in enumerate(train_loader, start=1):
         if verbose and idx % idx_report == 0:
-            print(f'Batch #{idx+1}/{n_batches} (Ave. Loss = {running_loss / (idx+1):.4f})...')
+            print(f'Batch #{idx+1}/{n_batches} (Ave. Loss = {mean_loss:.4f})...')
         inputs, labels = inputs.to(device), labels.to(device)
         optimizer.zero_grad()
         outputs = model(inputs)
         loss = criterion(outputs.flatten(start_dim=-2), labels.flatten(start_dim=-2))
         loss.backward()
         optimizer.step()
-        running_loss += loss.item()
+        mean_loss *= (idx - 1) / idx
+        mean_loss += loss.item() / idx
 
-    return running_loss / n_batches
+    return mean_loss
 
 
 def test(model, test_loader, criterion, device):
