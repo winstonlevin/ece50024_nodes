@@ -34,8 +34,9 @@ class EulerIntegrator:
 
 
 class RKIntegrator:
-    def __init__(self, tol: float = 1e-3):
-        self.tol = tol
+    def __init__(self, tol: float = 1e-3, max_iter: float = 100):
+        self.init_tol = tol
+        self.max_iter = max_iter
 
     def solve_ivp(self, fun: Callable, t_span: Tensor, y0: Tensor):
         """
@@ -53,20 +54,35 @@ class RKIntegrator:
         y = y0.clone()
 
         final_t = t_span[1]
-        # TODO
         h = dt
+        numiters = 0
+        tol = self.init_tol
+
+        #TODO set mex iterations
+        #if taking too long, maybe increase tolerance
         while t < final_t:
             #ensure not to step past final time
             h = min(h, final_t - t)
             #do RK 4 and 5 steps
             rk4, rk5 = self.rk45_step(fun, t_span, y, h)
-            error = torch.max(torch.abs(rk4 - rk5))
-            y += rk5
-            t += h
+            error = torch.max(torch.norm(rk5 - rk4))
+            if error < tol or h <= 0.001:
+                y += rk5
+                t += h
+                tol = self.init_tol
+
+            else:
+                numiters += 1
+            if numiters >= self.max_iter:
+                tol *= 10
+                numiters = 0
             #Need to limit the next step size to between (1/2 and 2)
-            nextStepSize = 0.9 * (self.tol / error) ** (1 / 5)
+            nextStepSize = 0.9 * (tol / error) ** (1 / 5)
             bestCase = min(2, nextStepSize)
-            h *= max(0.5, bestCase)
+            h *= max(0.01, bestCase)
+
+            #implement min step size
+            h = max(0.001, h)
         return y
 
     def rk45_step(self, fun: Callable, t_span: Tensor, y0: Tensor, dt: Tensor):
@@ -386,13 +402,21 @@ class WeatherForecaster(nn.Module):
         self.train_losses = []
         self.test_accuracies = []
 
+    #TODO
+    #Returns D+1 * 7 tensor of states
+    #Dims will be weird becuase of batching
+    #Will need to pass in sin and cos time terms (time variant)
     def forward(self, _state):
-        state_list = []
+        state_list = _state
         H = self.H
         nextState  = _state
         for t in range(H + 1):
-            nextState = self.hidden_layer(nextState)
-            state_list.append(nextState)
+            if t == 0:
+                nextState = self.hidden_layer(nextState)
+                state_list = nextState
+            else:
+                nextState = self.hidden_layer(nextState)
+                state_list = torch.cat((state_list, nextState), 0)
         return state_list
 
 

@@ -42,8 +42,8 @@ criterion = nn.CrossEntropyLoss()
 
 
 # Initialize the model, loss function, and optimizer
-#model = MNISTClassifier(n_features=n_features, use_node=True, integrator=RKIntegrator(tol = 0.01)).to(device)
-model = MNISTClassifier(n_features=n_features, use_node=True, integrator=EulerIntegrator(n_steps=20)).to(device)
+model = MNISTClassifier(n_features=n_features, use_node=True, integrator=RKIntegrator(tol = 0.01)).to(device)
+#model = MNISTClassifier(n_features=n_features, use_node=True, integrator=EulerIntegrator(n_steps=20)).to(device)
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
 # Training loop
