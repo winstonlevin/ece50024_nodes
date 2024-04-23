@@ -63,9 +63,11 @@ class WeatherDataSet(Dataset):
         self.n_states_to_return = self.n_prior_states + self.n_future_estimates + 1
 
         if process_csv:
-            self.seq_starts, self.seq_ends, self.too_high_start_index, self.time_state_tensor = self.process_csv()
+            self.seq_starts, self.seq_ends, self.too_high_start_index, self.time_state_tensor, self.midpoint,\
+            self.half_range = self.process_csv()
         else:
-            self.seq_starts, self.seq_ends, self.too_high_start_index, self.time_state_tensor = None, None, None, None
+            self.seq_starts, self.seq_ends, self.too_high_start_index, self.time_state_tensor, self.midpoint,\
+            self.half_range = None, None, None, None, None, None
 
         self.target_index_offset = self.n_prior_states + 1
 
@@ -75,13 +77,14 @@ class WeatherDataSet(Dataset):
         # Derive states from df
         time_state_arr = df[self.columns_to_use].values
 
+        x_max = np.max(time_state_arr, axis=0, keepdims=True)
+        x_min = np.min(time_state_arr, axis=0, keepdims=True)
+        half_range = 0.5 * (x_max - x_min)
+        midpoint = 0.5 * (x_max + x_min)
+        half_range[0, 0] = 1.  # Do not transform time
+        midpoint[0, 0] = 0.
+
         if self.normalize:
-            x_max = np.max(time_state_arr, axis=0, keepdims=True)
-            x_min = np.min(time_state_arr, axis=0, keepdims=True)
-            half_range = 0.5 * (x_max - x_min)
-            midpoint = 0.5 * (x_max + x_min)
-            half_range[0, 0] = 1.  # Do not transform time
-            midpoint[0, 0] = 0.
             time_state_arr -= midpoint  # Put midpoint at 0
             time_state_arr /= half_range  # Transform range to [-1, +1]
 
@@ -96,11 +99,12 @@ class WeatherDataSet(Dataset):
         too_high_start_index = seq_ends - too_low_length
 
         # Save pre-processed time/state array
-        os.makedirs(os.path.dirname(self.preprocess_path), exist_ok=True)  # Make directory if it does not yet exist
-        pd.DataFrame(time_state_arr).to_csv(self.preprocess_path)
+        # os.makedirs(os.path.dirname(self.preprocess_path), exist_ok=True)  # Make directory if it does not yet exist
+        # pd.DataFrame(time_state_arr).to_csv(self.preprocess_path)
         # np.savetxt(self.preprocess_path, time_state_arr, delimiter=',')
 
-        return seq_starts, seq_ends, too_high_start_index, torch.as_tensor(time_state_arr, dtype=self.dtype).T
+        return seq_starts, seq_ends, too_high_start_index, torch.as_tensor(time_state_arr, dtype=self.dtype).T, \
+            midpoint, half_range
 
     def truncated_data(self, start: int = 0, end: int = -1):
         return self.seq_starts[start:end], self.seq_ends[start:end], self.too_high_start_index[start:end]
@@ -130,6 +134,8 @@ class WeatherDataSet(Dataset):
             dataset.seq_starts, dataset.seq_ends, dataset.too_high_start_index = \
                 self.truncated_data(idx_start, idx_end)
             dataset.time_state_tensor = self.time_state_tensor
+            dataset.midpoint = self.midpoint
+            dataset.half_range = self.half_range
             datasets.append(dataset)
 
         return datasets
@@ -465,3 +471,22 @@ def test(model, test_loader, criterion, device):
             outputs = model(inputs)
             total_loss += criterion(outputs.flatten(start_dim=-2), targets.flatten(start_dim=-2)).item()
     return total_loss / n_batches
+
+
+def test_state(model, test_loader, device, idx_state):
+    """Evaluate accuracy of particular state prediction"""
+    model.eval()
+
+    n_batches = len(test_loader)
+    mean_temperature_error = 0.
+    total_samples_prev = 0.
+    with torch.no_grad():
+        for inputs, targets in test_loader:
+            inputs, targets = inputs.to(device), targets.to(device)
+            outputs = model(inputs)
+            n_samples = outputs.shape[0]
+            mean_temperature_error *= total_samples_prev / (n_samples + total_samples_prev)
+            mean_temperature_error += (
+                                              outputs[..., idx_state, :] - targets[..., idx_state, :]
+                                      ).abs().sum(axis=0) * n_samples / (n_samples + total_samples_prev)
+    return mean_temperature_error
