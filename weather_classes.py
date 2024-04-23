@@ -104,7 +104,7 @@ class WeatherDataSet(Dataset):
         # np.savetxt(self.preprocess_path, time_state_arr, delimiter=',')
 
         return seq_starts, seq_ends, too_high_start_index, torch.as_tensor(time_state_arr, dtype=self.dtype).T, \
-            midpoint, half_range
+            midpoint.flatten(), half_range.flatten()
 
     def truncated_data(self, start: int = 0, end: int = -1):
         return self.seq_starts[start:end], self.seq_ends[start:end], self.too_high_start_index[start:end]
@@ -345,6 +345,7 @@ class WeatherPredictor(nn.Module):
         # Storage of training information
         self.train_losses = []
         self.test_losses = []
+        self.temperature_accuracies = []
         self.weights = []
 
     def unpack_node_inputs(self, _inputs: Tensor):
@@ -478,15 +479,16 @@ def test_state(model, test_loader, device, idx_state):
     model.eval()
 
     n_batches = len(test_loader)
-    mean_temperature_error = 0.
+    mean_state_error = 0.
     total_samples_prev = 0.
     with torch.no_grad():
         for inputs, targets in test_loader:
             inputs, targets = inputs.to(device), targets.to(device)
             outputs = model(inputs)
             n_samples = outputs.shape[0]
-            mean_temperature_error *= total_samples_prev / (n_samples + total_samples_prev)
-            mean_temperature_error += (
-                                              outputs[..., idx_state, :] - targets[..., idx_state, :]
-                                      ).abs().sum(axis=0) * n_samples / (n_samples + total_samples_prev)
-    return mean_temperature_error
+            mean_state_error *= total_samples_prev / (n_samples + total_samples_prev)
+            mean_state_error += (
+                                        outputs[..., idx_state, :] - targets[..., idx_state, :]
+                                ).abs().sum(axis=0) / (n_samples + total_samples_prev)
+            total_samples_prev += n_samples
+    return mean_state_error
