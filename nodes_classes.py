@@ -116,7 +116,7 @@ class NODEGradientModule(nn.Module, ABC):
 
         time_adjoint_dynamics, costate_dynamics, *parameter_adjoint_dynamics = torch.autograd.grad(
             (dxdt,), (time, state) + tuple(self.parameters()), grad_outputs=grad_outputs,
-            allow_unused=True, retain_graph=True
+            allow_unused=True, retain_graph=True, materialize_grads=True
         )
 
         # Combine all parameters into flattened vector

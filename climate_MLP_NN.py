@@ -8,7 +8,9 @@ import matplotlib.pyplot as plt
 
 from weather_classes import WeatherDataSet, WeatherPredictor, create_matrix_from_weights, \
     weather_weighted_loss_function, train, test, test_state
-from nodes_classes import RKIntegrator
+from nodes_classes import RKIntegrator, EulerIntegrator
+
+torch.autograd.set_detect_anomaly(True)
 
 # =================== Define Hyperparameters =================== 
 batch_size = 64
@@ -28,7 +30,9 @@ discount_factor = 0.9
 
 learning_rate = 1e-3
 
-use_node = False
+use_node = True
+integrator = EulerIntegrator(n_steps=20)
+# integrator = RKIntegrator(min_time_step=1./20.)
 
 # =================== Build Dataset ===================
 data_csv_path = './tmp/data/Weather/north_processed.csv'
@@ -66,7 +70,7 @@ def criterion(_output, _target):
 
 model = WeatherPredictor(
     n_states=n_states, n_prior_states=n_prior_states, n_predictions=n_future_estimates, n_layers=3,
-    activation_type='SiLU', use_node=use_node, integrator=RKIntegrator(min_time_step=1./20.), dtype=torch.float32
+    activation_type='SiLU', use_node=use_node, integrator=integrator, dtype=torch.float32
 ).to(device)
 model.weights = prediction_weights
 for idx_predict in range(n_future_estimates):
@@ -88,7 +92,7 @@ for epoch in range(max_epochs):
         model.temperature_accuracies[idx_predict].append(temp_acc.item())
 
     print(f"[Epoch {epoch + 1}/{max_epochs}] "
-          f"Train Loss: {train_loss}, Validation Loss: {test_loss}, 1-hour Temp. Acc: {temp_accuracy[0]}")
+          f"Train Loss: {train_loss}, Validation Loss: {test_loss}, 1-hour Temp. Err.: {temp_accuracy[0]}")
 
     # Detect overtraining
     if test_loss < test_loss_prev:
@@ -101,14 +105,14 @@ for epoch in range(max_epochs):
         break
     test_loss_prev = test_loss
 
-# Save Model
-current_time = time.gmtime()
-date = f'{current_time.tm_year:04d}-{current_time.tm_mon:02d}-{current_time.tm_mday:02d}'
-hour = f'{current_time.tm_hour:02d}-{current_time.tm_min:02d}-{current_time.tm_sec:02d}'
-file_name = f'tmp/models/Weather_{date}_{hour}.pickle'
-os.makedirs(os.path.dirname(file_name), exist_ok=True)  # Make directory if it does not yet exist
-with open(file_name, 'wb') as f:
-    pickle.dump(model, f, protocol=pickle.HIGHEST_PROTOCOL)
+    # Save Model
+    current_time = time.gmtime()
+    date = f'{current_time.tm_year:04d}-{current_time.tm_mon:02d}-{current_time.tm_mday:02d}'
+    hour = f'{current_time.tm_hour:02d}-{current_time.tm_min:02d}-{current_time.tm_sec:02d}'
+    file_name = f'tmp/models/Weather_{date}_{hour}.pickle'
+    os.makedirs(os.path.dirname(file_name), exist_ok=True)  # Make directory if it does not yet exist
+    with open(file_name, 'wb') as f:
+        pickle.dump(model, f, protocol=pickle.HIGHEST_PROTOCOL)
 
 # Plotting the training loss and test accuracy
 fig_accuracy = plt.figure(figsize=(10, 5))

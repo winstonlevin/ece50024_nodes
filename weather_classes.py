@@ -92,6 +92,7 @@ class WeatherDataSet(Dataset):
         seq_starts = np.insert(np.nonzero(time_difference > 1)[0] + 1, 0, 0)
         seq_ends = np.append(seq_starts[1:], len(time_difference))
 
+        # Remove sequences which are too short
         len_seq = seq_ends - seq_starts
         too_low_length = self.n_states_to_return - 1
         seq_starts = seq_starts[len_seq > too_low_length]
@@ -273,18 +274,18 @@ class WeatherNODE(NODEGradientModule):
         self.n_layers: int = n_layers
         self.activation_type: str = activation_type
 
-        # dx/dt = f(t, x), where t is integration time and x is the feature vector
+        # dx/dt = f(x) because x includes trig time [cos(t), sin(t)], so no need to add time as input
         self.dynamic_layer = generate_dense_layers(
-            in_features=1 + self.n_features, out_features=self.n_features, n_layers=self.n_layers,
+            in_features=self.n_features, out_features=self.n_features, n_layers=self.n_layers,
             activation_type=self.activation_type, dtype=dtype
         )
-
-    @staticmethod
-    def cat_state_with_time(time: Tensor, state: Tensor):
-        """
-        Returns a concatenation [t; x]
-        """
-        return torch.cat((time.expand(size=state[..., 0:1].shape), state), dim=-1)
+    #
+    # @staticmethod
+    # def cat_state_with_time(time: Tensor, state: Tensor):
+    #     """
+    #     Returns a concatenation [t; x]
+    #     """
+    #     return torch.cat((time.expand(size=state[..., 0:1].shape), state), dim=-1)
 
     def forward(self, integration_time, trig_time_and_state):
         """
@@ -294,7 +295,7 @@ class WeatherNODE(NODEGradientModule):
         :param trig_time_and_state: Concatenation of cos(time), sin(time), and state for (possibly) batched input
         :return:
         """
-        dxdt = self.dynamic_layer(self.cat_state_with_time(integration_time, trig_time_and_state))
+        dxdt = self.dynamic_layer(trig_time_and_state)
         return dxdt
 
 
@@ -365,7 +366,8 @@ class WeatherPredictor(nn.Module):
         for _idx_assign in range(1, self.n_prior_states*self.n_states, self.n_states):
             _diff_time_state = _diff_time_state.diff(dim=-1)
             _transformed_state[..., :, _idx_assign] = \
-                _diff_time_state[..., 1:, 0] / _diff_time_state[..., 0:1, 0]
+                _diff_time_state[..., 1:, 0] / _diff_time_state[..., 0:1, 0].maximum(
+                    torch.as_tensor(1., dtype=_inputs.dtype, device=_inputs.device))  # Max ensures positive difference
 
         # Flatten and return
         return torch.cat((
@@ -439,22 +441,27 @@ def train(model, train_loader, optimizer, criterion, device, verbose=True):
     model.train()  # Change model to training mode
 
     mean_loss = 0.0
+    total_samples_prev = 0.
+
     n_batches = len(train_loader)
     idx_report = max(1, int(n_batches / 5))
     if verbose:
         print(f'\n')
 
     for idx, (inputs, labels) in enumerate(train_loader, start=1):
-        if verbose and idx % idx_report == 0:
-            print(f'Batch #{idx+1}/{n_batches} (Ave. Loss = {mean_loss:.4f})...')
+        if verbose and idx % idx_report == 1:
+            print(f'Batch #{idx}/{n_batches} (Ave. Loss = {mean_loss:.4f})...')
         inputs, labels = inputs.to(device), labels.to(device)
         optimizer.zero_grad()
         outputs = model(inputs)
         loss = criterion(outputs.flatten(start_dim=-2), labels.flatten(start_dim=-2))
         loss.backward()
         optimizer.step()
-        mean_loss *= (idx - 1) / idx
-        mean_loss += loss.item() / idx
+
+        n_samples = outputs.shape[0]
+        mean_loss *= total_samples_prev / (n_samples + total_samples_prev)
+        mean_loss += loss.item() * n_samples / (n_samples + total_samples_prev)  # Assume mean reduction
+        total_samples_prev += n_samples
 
     return mean_loss
 
@@ -466,13 +473,20 @@ def test(model, test_loader, criterion, device):
     model.eval()  # Change model to evaluation mode
 
     n_batches = len(test_loader)
-    total_loss = 0.
+
+    mean_loss = 0.0
+    total_samples_prev = 0.
     with torch.no_grad():
         for inputs, targets in test_loader:
             inputs, targets = inputs.to(device), targets.to(device)
             outputs = model(inputs)
-            total_loss += criterion(outputs.flatten(start_dim=-2), targets.flatten(start_dim=-2)).item()
-    return total_loss / n_batches
+            loss = criterion(outputs.flatten(start_dim=-2), targets.flatten(start_dim=-2))
+
+            n_samples = outputs.shape[0]
+            mean_loss *= total_samples_prev / (n_samples + total_samples_prev)
+            mean_loss += loss.item() * n_samples / (n_samples + total_samples_prev)  # Assume mean reduction
+            total_samples_prev += n_samples
+    return mean_loss
 
 
 def test_state(model, test_loader, device, idx_state):
