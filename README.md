@@ -8,5 +8,5 @@ This repository is our group's implementation of Neural Ordinary Differential Eq
 
 This repository uses Python 3.10. Within a Python 3.10 virtual environment, install necessary packages by cloning or downloading this repository and running:
 ```
-pip install -e <path to ece50024_nodes>
+pip install -r <path to ece50024_nodes>/requirements.txt
 ```
