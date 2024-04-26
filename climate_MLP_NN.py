@@ -15,7 +15,7 @@ torch.autograd.set_detect_anomaly(True)
 # =================== Define Hyperparameters =================== 
 batch_size = 64
 max_epochs = 50
-max_epochs_without_improvement = 4
+max_epochs_without_improvement = 2
 n_prior_states = 1  # Number of prior states used
 n_future_estimates = 8  # Number of future predictions [hr]
 
@@ -30,7 +30,7 @@ discount_factor = 0.9
 
 learning_rate = 1e-3
 
-use_node = True
+use_node = False
 integrator = EulerIntegrator(n_steps=20)
 # integrator = RKIntegrator(min_time_step=1./20.)
 
